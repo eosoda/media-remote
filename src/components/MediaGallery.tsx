@@ -1,33 +1,20 @@
+
 "use client";
 
-import type { MediaFile, Project } from "@/types";
+import type { Project } from "@/types";
 import { useProjects } from "@/contexts/ProjectContext";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import Image from "next/image";
-import { Trash2, PlayCircle, Eye, CheckCircle2, Loader2 } from "lucide-react"; // Added Loader2
+import { PlayCircle, Loader2 } from "lucide-react"; 
 import { ScrollArea } from "./ui/scroll-area";
-import { Badge } from "./ui/badge";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react"; 
+import { useState, useCallback } from "react"; 
+import { MediaItemCard } from "./MediaItemCard"; // Import the new component
 
 interface MediaGalleryProps {
   project: Project;
   onMediaSelect?: (mediaId: string) => void;
   interactive?: boolean; 
   showSetCurrent?: boolean; 
-  externallyControlledMediaId?: string | null; // New prop
+  externallyControlledMediaId?: string | null;
 }
 
 export function MediaGallery({ 
@@ -42,8 +29,7 @@ export function MediaGallery({
   const [isDeletingMediaId, setIsDeletingMediaId] = useState<string | null>(null);
   const [isSettingActiveMediaId, setIsSettingActiveMediaId] = useState<string | null>(null);
 
-
-  const handleDeleteMedia = async (mediaId: string, mediaName: string) => {
+  const handleDeleteMedia = useCallback(async (mediaId: string, mediaName: string) => {
     setIsDeletingMediaId(mediaId);
     try {
       await deleteMedia(project.id, mediaId); 
@@ -61,9 +47,9 @@ export function MediaGallery({
     } finally {
       setIsDeletingMediaId(null);
     }
-  };
+  }, [deleteMedia, project.id, toast]);
 
-  const handleSetCurrentMedia = async (mediaId: string) => {
+  const handleSetCurrentMedia = useCallback(async (mediaId: string) => {
     setIsSettingActiveMediaId(mediaId);
     try {
       await setCurrentMediaForProject(project.id, mediaId); 
@@ -81,7 +67,7 @@ export function MediaGallery({
     } finally {
       setIsSettingActiveMediaId(null);
     }
-  };
+  }, [setCurrentMediaForProject, project.id, toast]);
 
   if (project.media.length === 0) {
     return (
@@ -97,105 +83,25 @@ export function MediaGallery({
     <ScrollArea className="h-[calc(100vh-280px)] lg:h-[calc(100vh-200px)] pr-1">
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 p-1">
         {project.media.map((media) => {
-          // Determine if media is active. Prioritize externallyControlledMediaId if provided.
           const isMediaEffectivelyActive = externallyControlledMediaId !== undefined 
             ? externallyControlledMediaId === media.id
             : project.currentMediaId === media.id;
 
           return (
-            <Card 
-              key={media.id} 
-              className={`overflow-hidden transition-all duration-200 ease-in-out shadow-md hover:shadow-xl ${interactive ? 'cursor-pointer hover:scale-105' : ''} ${isMediaEffectivelyActive ? 'ring-2 ring-primary' : ''}`}
-              onClick={() => interactive && onMediaSelect && onMediaSelect(media.id)}
-            >
-              <CardHeader className="p-0 relative">
-                {media.type === "image" ? (
-                  <Image
-                    src={media.url}
-                    alt={media.name}
-                    width={300}
-                    height={200}
-                    className="aspect-video w-full object-cover"
-                    data-ai-hint="gallery thumbnail"
-                  />
-                ) : (
-                  <div className="aspect-video w-full bg-black flex items-center justify-center">
-                    <PlayCircle className="h-16 w-16 text-white opacity-70" />
-                  </div>
-                )}
-                {isMediaEffectivelyActive && (
-                  <Badge variant="default" className="absolute top-2 right-2 bg-primary text-primary-foreground">
-                    <CheckCircle2 className="h-3 w-3 mr-1"/> Active
-                  </Badge>
-                )}
-              </CardHeader>
-              <CardContent className="p-3 space-y-1">
-                <CardTitle className="text-sm font-medium truncate" title={media.name}>{media.name}</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  {media.type === "image" ? "Image" : "Video"} - {(media.size / (1024 * 1024)).toFixed(2)} MB
-                </p>
-              </CardContent>
-              <CardFooter className="p-3 flex justify-between items-center">
-                {/* "Set Active" button only makes sense if not remotely controlling & showSetCurrent is true */}
-                {showSetCurrent && externallyControlledMediaId === undefined && (
-                  isMediaEffectivelyActive ? (
-                    <Button variant="default" size="sm" disabled>
-                      <CheckCircle2 className="mr-1 h-4 w-4" /> Active
-                    </Button>
-                  ) : (
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={(e) => { e.stopPropagation(); handleSetCurrentMedia(media.id); }}
-                      disabled={isSettingActiveMediaId === media.id}
-                    >
-                      {isSettingActiveMediaId === media.id ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Eye className="mr-1 h-4 w-4" />} 
-                      Set Active
-                    </Button>
-                  )
-                )}
-                
-                {/* Spacer if no "Set Active" button is shown but delete button is there */}
-                {/* This ensures the delete button is pushed to the right if "Set Active" isn't there */}
-                {!(showSetCurrent && externallyControlledMediaId === undefined) && !interactive && <div className="flex-grow"/>}
-
-                {!interactive && (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="text-destructive hover:bg-destructive/10" 
-                        onClick={(e) => e.stopPropagation()}
-                        disabled={isDeletingMediaId === media.id}
-                      >
-                        {isDeletingMediaId === media.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete Media File?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          Are you sure you want to delete "{media.name}"? This action cannot be undone.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel onClick={(e) => e.stopPropagation()}>Cancel</AlertDialogCancel>
-                        <AlertDialogAction 
-                            onClick={(e) => {e.stopPropagation(); handleDeleteMedia(media.id, media.name)}} 
-                            className="bg-destructive hover:bg-destructive/90"
-                            disabled={isDeletingMediaId === media.id}
-                        >
-                           {isDeletingMediaId === media.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                          Delete
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-              </CardFooter>
-            </Card>
-          )
+            <MediaItemCard
+              key={media.id}
+              media={media}
+              projectId={project.id}
+              isEffectivelyActive={isMediaEffectivelyActive}
+              interactive={interactive}
+              onMediaSelect={onMediaSelect}
+              showSetCurrent={showSetCurrent && externallyControlledMediaId === undefined}
+              onDeleteMedia={handleDeleteMedia}
+              onSetCurrentMedia={handleSetCurrentMedia}
+              isDeletingThisMedia={isDeletingMediaId === media.id}
+              isSettingThisMediaActive={isSettingActiveMediaId === media.id}
+            />
+          );
         })}
       </div>
     </ScrollArea>

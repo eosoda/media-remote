@@ -2,10 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { Home, Info, Folder, Tv2, Smartphone, PlusCircle, ShieldCheck, LayoutDashboard, Settings } from "lucide-react";
-import type {
-
-} from "@/components/ui/sidebar";
+import { Home, Info, Folder, Tv2, Smartphone, PlusCircle, ShieldCheck, LayoutDashboard, Settings } from "lucide-react"; 
 import { SiteLogo } from "@/components/SiteLogo";
 import { useProjects } from "@/contexts/ProjectContext";
 import { usePathname } from "next/navigation";
@@ -17,19 +14,22 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  SidebarSeparator, SidebarFooter,} from "@/components/ui/sidebar";
+  SidebarSeparator, 
+  SidebarFooter,
+} from "@/components/ui/sidebar";
 
 export function AppSidebar() {
-  const { activeProjectForMenu, projects } = useProjects();
+  const { projects } = useProjects(); 
   const pathname = usePathname();
 
   return (
-    <Sidebar collapsible="icon" className="border-r">
-      <SidebarHeader className="p-4">
+    <Sidebar collapsible="icon" className="border-r"> 
+      <SidebarHeader className="p-4 flex justify-start items-center"> {/* Changed justify-between to justify-start */}
         <SiteLogo />
+        {/* Desktop toggle button removed from here */}
       </SidebarHeader>
       <SidebarContent>
-        <SidebarMenu>
+        <SidebarMenu className="pl-2">
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
@@ -82,11 +82,11 @@ export function AppSidebar() {
 
         <SidebarSeparator className="my-4" />
         
-        <SidebarMenu>
+        <SidebarMenu className="pl-2">
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              isActive={pathname === "/display" || pathname.startsWith("/display/") && !pathname.includes(activeProjectForMenu?.id || '___INVALID___')}
+              isActive={pathname === "/display"}
               tooltip="Open This Device's Display"
             >
               <Link href="/display" target="_blank" rel="noopener noreferrer">
@@ -109,13 +109,11 @@ export function AppSidebar() {
           </SidebarMenuItem>
         </SidebarMenu>
         
-        {projects.length > 0 && !activeProjectForMenu && <SidebarSeparator className="my-4" />}
-        
-        {!activeProjectForMenu && projects.length > 0 ? (
-           <div className="px-4 py-2 text-sm text-muted-foreground group-data-[collapsible=icon]:hidden">
-             Select a project to see details here or go to Manage Projects&apos;.
+        {projects.length > 0 && (
+           <div className="px-4 py-2 text-sm text-muted-foreground group-data-[state=collapsed]:hidden">
+             
           </div>
-        ) : null}
+        )}
 
       </SidebarContent>
       <SidebarFooter className="p-2">

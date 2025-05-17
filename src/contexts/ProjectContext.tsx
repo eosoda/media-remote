@@ -17,7 +17,7 @@ import React, {
   useCallback,
 } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { firestore } from "@/lib/firebase"; // Using Firestore
+import { firestore } from "@/lib/firebase"; 
 import {
   collection,
   doc,
@@ -28,23 +28,18 @@ import {
   updateDoc,
   onSnapshot,
   query,
-  Timestamp, // Use Firestore Timestamp
+  Timestamp, 
   orderBy,
   writeBatch,
   setDoc,
 } from "firebase/firestore";
 import { minioS3Client, MINIO_BUCKET_NAME } from "@/lib/minio"; 
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
-// Removed Firebase Storage imports as they are no longer used
-// import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject as deleteFileFromFirebase } from "firebase/storage";
 
-
-// Firestore collection names
 const PROJECTS_COLLECTION = "projects";
 const MEDIA_SUBCOLLECTION = "media";
 const INSTANCE_DISPLAY_STATE_COLLECTION = "instanceDisplayState";
 
-// LocalStorage keys for instance PIN
 const INSTANCE_PIN_KEY = "media-remote-instance-pin";
 const INSTANCE_PIN_EXPIRY_KEY = "media-remote-instance-pin-expiry";
 const INSTANCE_PIN_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -224,7 +219,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [instancePin, projects]);
 
-  const addProject = async (
+  const addProject = useCallback(async (
     name: string,
     pin: string
   ): Promise<Project | null> => {
@@ -254,15 +249,15 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       console.error("Error adding project to Firestore:", error);
       return null;
     }
-  };
+  }, []);
 
-  const getProject = (id: string): Project | undefined => {
+  const getProject = useCallback((id: string): Project | undefined => {
     return projects.find((p) => p.id === id);
-  };
+  }, [projects]);
 
-  const addMediaToProject = async (
+  const addMediaToProject = useCallback(async (
     projectId: string,
-    file: File, // For metadata (name, type, size)
+    file: File, 
     minioObjectKey: string
   ): Promise<MediaFile | undefined> => {
     const projectDocRef = doc(firestore, PROJECTS_COLLECTION, projectId);
@@ -319,9 +314,9 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       console.error("Error saving media metadata to Firestore:", error);
       return undefined;
     }
-  };
+  }, []);
   
-  const deleteMedia = async (
+  const deleteMedia = useCallback(async (
     projectId: string,
     mediaId: string 
   ): Promise<void> => {
@@ -339,15 +334,13 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     }
 
     try {
-      // Delete from MinIO
       const deleteCommand = new DeleteObjectCommand({
         Bucket: MINIO_BUCKET_NAME,
-        Key: mediaToDelete.storagePath, // storagePath is the MinIO object key
+        Key: mediaToDelete.storagePath, 
       });
       await minioS3Client.send(deleteCommand);
       console.log(`Successfully deleted ${mediaToDelete.storagePath} from MinIO.`);
 
-      // Delete from Firestore
       const mediaDocRef = doc(
         firestore,
         PROJECTS_COLLECTION,
@@ -371,9 +364,9 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       console.error("Error deleting media (from MinIO or Firestore):", error);
       throw error; 
     }
-  };
+  }, [getProject]);
   
-  const deleteProject = async (projectId: string): Promise<void> => {
+  const deleteProject = useCallback(async (projectId: string): Promise<void> => {
     const project = getProject(projectId);
     if (!project) {
         console.warn(`Project with ID ${projectId} not found for deletion.`);
@@ -414,21 +407,21 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
         console.error("Error deleting project with batch from Firestore:", error);
         throw error;
     }
-  };
+  }, [getProject, activeProjectForMenuId]);
 
-  const setCurrentMediaForProject = async (
+  const setCurrentMediaForProject = useCallback(async (
     projectId: string,
     mediaId: string | null
   ): Promise<void> => {
     const projectDocRef = doc(firestore, PROJECTS_COLLECTION, projectId);
     await updateDoc(projectDocRef, { currentMediaId: mediaId });
-  };
+  }, []);
 
-  const setActiveProjectForMenu = (projectId: string | null): void => {
+  const setActiveProjectForMenu = useCallback((projectId: string | null): void => {
     setActiveProjectForMenuId(projectId);
-  };
+  }, []);
   
-  const updateDisplayForInstance = async (
+  const updateDisplayForInstance = useCallback(async (
     targetInstancePin: string,
     projectId: string,
     mediaId: string | null
@@ -444,9 +437,9 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       lastSeen: Timestamp.now().toMillis(),
     };
     await setDoc(instanceStateDocRef, stateToSet, { merge: true });
-  };
+  }, []);
 
-  const listenToInstanceDisplayState = (
+  const listenToInstanceDisplayState = useCallback((
     instancePinToListen: string,
     onDataChange: (data: InstanceDisplayState | null) => void
   ): (() => void) => {
@@ -474,9 +467,9 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       }
     );
     return unsubscribe;
-  };
+  }, [createInstanceDisplayStateIfNeeded]);
 
-  const checkAdminPassword = (password: string): boolean => {
+  const checkAdminPassword = useCallback((password: string): boolean => {
     const adminPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || "1234";
     const isAdmin = password === adminPassword;
     if (isAdmin) {
@@ -484,12 +477,12 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       if(typeof window !== "undefined") localStorage.setItem("isAdminAuthenticated", "true");
     }
     return isAdmin;
-  };
+  }, []);
 
-  const logoutAdmin = () => {
+  const logoutAdmin = useCallback(() => {
     setIsUserAdmin(false);
     if(typeof window !== "undefined") localStorage.removeItem("isAdminAuthenticated");
-  };
+  }, []);
 
   useEffect(() => {
     if(typeof window !== "undefined" && localStorage.getItem("isAdminAuthenticated") === "true") {
@@ -497,7 +490,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  const updateProjectName = async (
+  const updateProjectName = useCallback(async (
     projectId: string,
     newName: string
   ): Promise<void> => {
@@ -506,9 +499,9 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       name: newName,
       slug: generateSlug(newName),
     });
-  };
+  }, []);
 
-  const getAllInstanceDisplayStates = async (): Promise<
+  const getAllInstanceDisplayStates = useCallback(async (): Promise<
     Record<string, InstanceDisplayState>
   > => {
     const snapshot = await getDocs(collection(firestore, INSTANCE_DISPLAY_STATE_COLLECTION));
@@ -517,9 +510,9 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
         states[doc.id] = doc.data() as InstanceDisplayState;
     });
     return states;
-  };
+  }, []);
 
-  const clearInstanceDisplayState = async (pin: string): Promise<void> => {
+  const clearInstanceDisplayState = useCallback(async (pin: string): Promise<void> => {
     const instanceDocRef = doc(firestore, INSTANCE_DISPLAY_STATE_COLLECTION, pin);
     const docSnap = await getDoc(instanceDocRef);
     if (docSnap.exists()) {
@@ -535,12 +528,12 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
         lastSeen: Timestamp.now().toMillis(),
       });
     }
-  };
+  }, []);
 
-  const deleteInstanceDisplayStateFromAdmin = async (pin: string): Promise<void> => {
+  const deleteInstanceDisplayStateFromAdmin = useCallback(async (pin: string): Promise<void> => {
     const instanceDocRef = doc(firestore, INSTANCE_DISPLAY_STATE_COLLECTION, pin);
     await deleteDoc(instanceDocRef);
-  };
+  }, []);
   
   const activeProjectForMenu = projects.find((p) => p.id === activeProjectForMenuId) || null;
 

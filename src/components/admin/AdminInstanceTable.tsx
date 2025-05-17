@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import type { InstanceDisplayState, Project } from "@/types";
 import { useProjects } from "@/contexts/ProjectContext";
 import { Button } from "@/components/ui/button";
@@ -29,7 +29,7 @@ import { Loader2, Trash2, PowerOff, RadioTower, AlertTriangle } from "lucide-rea
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface EnrichedInstanceDisplayState extends InstanceDisplayState {
-  pin: string; // Add pin property here
+  pin: string; 
   projectName?: string;
   mediaName?: string;
 }
@@ -52,7 +52,7 @@ export function AdminInstanceTable() {
   const [oldInstancesToDelete, setOldInstancesToDelete] = useState<EnrichedInstanceDisplayState[]>([]);
   const [isDeletingOldInstances, setIsDeletingOldInstances] = useState(false);
 
-  const fetchAndEnrichInstances = async () => {
+  const fetchAndEnrichInstances = useCallback(async () => {
     setIsLoadingInstances(true);
     try {
       const rawInstances = await getAllInstanceDisplayStates();
@@ -69,42 +69,48 @@ export function AdminInstanceTable() {
       setInstances(enriched);
     } catch (error) {
       toast({ title: "Error", description: "Failed to load display instances.", variant: "destructive" });
+      console.error("Failed to load display instances:", error)
       setInstances([]);
-      setIsLoadingInstances(false);
+    } finally {
+        setIsLoadingInstances(false);
     }
-  };
+  }, [getAllInstanceDisplayStates, projects, toast]);
 
   useEffect(() => {
     if (!projectsLoading) { 
       fetchAndEnrichInstances();
     }
-  }, [projectsLoading, projects, fetchAndEnrichInstances]);
+  }, [projectsLoading, fetchAndEnrichInstances]);
 
-  const handleClearInstance = async (pin: string) => {
+  const handleClearInstance = useCallback(async (pin: string) => {
     setIsProcessingInstance(pin);
     try {
       await clearInstanceDisplayState(pin);
       toast({ title: "Instance Cleared", description: `Display instance PIN ${pin} has been cleared.` });
-      await fetchAndEnrichInstances(); // Refresh list
+      await fetchAndEnrichInstances(); 
     } catch (error) {
+      toast({ title: "Error", description: `Failed to clear instance ${pin}.`, variant: "destructive" });
+      console.error(`Failed to clear instance ${pin}:`, error);
     } finally {
       setIsProcessingInstance(null);
     }
-  };
+  }, [clearInstanceDisplayState, toast, fetchAndEnrichInstances]);
 
-  const handleDeleteInstance = async (pin: string) => {
+  const handleDeleteInstance = useCallback(async (pin: string) => {
     setIsProcessingInstance(pin);
     try {
       await deleteInstanceDisplayStateFromAdmin(pin); 
       toast({ title: "Instance Deleted", description: `Display instance PIN ${pin} state has been deleted.` });
       setInstances(prev => prev.filter(inst => inst.pin !== pin));
     } catch (error) {
+       toast({ title: "Error", description: `Failed to delete instance ${pin}.`, variant: "destructive" });
+       console.error(`Failed to delete instance ${pin}:`, error);
     } finally {
       setIsProcessingInstance(null);
     }
-  };
+  }, [deleteInstanceDisplayStateFromAdmin, toast]);
 
-  const handleCheckOldInstances = () => {
+  const handleCheckOldInstances = useCallback(() => {
     const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
     const oldOnes = instances.filter(inst => inst.lastSeen && inst.lastSeen < twentyFourHoursAgo);
     setOldInstancesToDelete(oldOnes);
@@ -113,21 +119,24 @@ export function AdminInstanceTable() {
     } else {
       toast({ title: "No Old Instances", description: "No display instances older than 24 hours found." });
     }
-  };
+  }, [instances, toast]);
 
-  const handleConfirmDeleteOldInstances = async () => {
+  const handleConfirmDeleteOldInstances = useCallback(async () => {
     if (oldInstancesToDelete.length === 0) return;
     setIsDeletingOldInstances(true);
     try {
       await Promise.all(oldInstancesToDelete.map(inst => deleteInstanceDisplayStateFromAdmin(inst.pin)));
       toast({ title: "Success", description: `${oldInstancesToDelete.length} old instance(s) deleted successfully.` });
-      await fetchAndEnrichInstances(); // Refresh the list
-      toast({ title: "Error", description: "Failed to delete some or all old instances. Please check console for details.", variant: "destructive" });
+      await fetchAndEnrichInstances(); 
+    } catch (error) {
+        toast({ title: "Error", description: "Failed to delete some or all old instances. Please check console for details.", variant: "destructive" });
+        console.error("Failed to delete old instances:", error);
     } finally {
       setIsDeletingOldInstances(false);
       setShowDeleteOldDialog(false);
+      setOldInstancesToDelete([]);
     }
-  };
+  }, [oldInstancesToDelete, deleteInstanceDisplayStateFromAdmin, toast, fetchAndEnrichInstances]);
   
   const isLoading = projectsLoading || isLoadingInstances;
 
@@ -144,11 +153,10 @@ export function AdminInstanceTable() {
     <>
       <div className="my-4 flex justify-end">
         <AlertDialog open={showDeleteOldDialog} onOpenChange={setShowDeleteOldDialog}>
-          {/* AlertDialogTrigger is not needed here as we open it programmatically */}
           <Button 
             variant="outline" 
             onClick={handleCheckOldInstances}
-            disabled={instances.length === 0 || isDeletingOldInstances}
+            disabled={instances.length === 0 || isDeletingOldInstances || isLoadingInstances}
           >
             {isDeletingOldInstances ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <AlertTriangle className="h-4 w-4 mr-2" />}
             Delete Instances &gt; 24h Old
@@ -195,7 +203,7 @@ export function AdminInstanceTable() {
       )}
 
       {instances.length > 0 && (
-        <ScrollArea className="h-[calc(100vh-420px)]"> {/* Adjusted height for the button */}
+        <ScrollArea className="h-[calc(100vh-420px)]"> 
           <Table>
             <TableHeader>
               <TableRow>
@@ -227,7 +235,7 @@ export function AdminInstanceTable() {
                       disabled={isProcessingInstance === instance.pin}
                       title="Clear Display (set to no media)"
                     >
-                      {isProcessingInstance === instance.pin && isProcessingInstance === instance.pin ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <PowerOff className="h-4 w-4 mr-1" />}
+                      {isProcessingInstance === instance.pin ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <PowerOff className="h-4 w-4 mr-1" />}
                       Clear
                     </Button>
                     <AlertDialog>
@@ -274,4 +282,3 @@ export function AdminInstanceTable() {
     </>
   );
 }
-
