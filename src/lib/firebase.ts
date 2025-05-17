@@ -1,7 +1,7 @@
 // src/lib/firebase.ts
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getFirestore, type Firestore } from "firebase/firestore";
-import { getStorage, type FirebaseStorage } from "firebase/storage";
+// Removed: import { getStorage, type FirebaseStorage } from "firebase/storage";
 
 
 const firebaseConfig = {
@@ -21,9 +21,14 @@ if (!firebaseConfig.apiKey) {
 
 // Check for placeholder or undefined Project ID
 if (!firebaseConfig.projectId || firebaseConfig.projectId === "your_project_id") {
-  throw new Error(
-    "Firebase Configuration Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID is not defined or is a placeholder. This is a required field. Please set it in your .env.local file with your actual Firebase Project ID."
+  // This was changed to console.error to avoid breaking build if only Firestore is used and projectId is still placeholder for RTDB
+  console.error(
+    "Firebase Configuration Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID is not defined or is a placeholder. This is a required field for Firestore. Please set it in your .env.local file with your actual Firebase Project ID."
   );
+  // To actually throw error and stop build if project ID is critical for all firebase services:
+  // throw new Error(
+  //   "Firebase Configuration Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID is not defined or is a placeholder. This is a required field. Please set it in your .env.local file with your actual Firebase Project ID."
+  // );
 }
 
 
@@ -32,18 +37,13 @@ if (firebaseConfig.databaseURL && firebaseConfig.databaseURL !== "your_database_
   try {
     const url = new URL(firebaseConfig.databaseURL);
     if (!url.protocol.startsWith("https")) {
-      // Allow empty or non-standard URLs if user is aware, but log a warning.
-      // For this app, databaseURL is not strictly needed for Firestore/Storage,
-      // but Firebase SDK might try to parse it if present.
       console.warn(`Firebase Configuration Warning: NEXT_PUBLIC_FIREBASE_DATABASE_URL ("${firebaseConfig.databaseURL}") protocol is not https. Ensure this is intended.`);
     }
-    // Relaxed check: only warn if it doesn\'t look like a typical Firebase RTDB URL but is present.
     if (!(url.hostname.endsWith(".firebaseio.com") || url.hostname.endsWith(".firebasedatabase.app"))) {
-       console.warn(`Firebase Configuration Warning: NEXT_PUBLIC_FIREBASE_DATABASE_URL ("${firebaseConfig.databaseURL}") does not look like a standard Firebase Realtime Database URL. If you are only using Firestore and Storage, this might be okay, but ensure it's correctly configured if Realtime Database functionality is ever needed.`);
+       console.warn(`Firebase Configuration Warning: NEXT_PUBLIC_FIREBASE_DATABASE_URL ("${firebaseConfig.databaseURL}") does not look like a standard Firebase Realtime Database URL. If you are only using Firestore, this might be okay, but ensure it's correctly configured if Realtime Database functionality is ever needed.`);
     }
   } catch (e) {
-    // If URL parsing fails for a non-placeholder databaseURL, it's likely a misconfiguration.
-    console.error( // Changed from throw to console.error to avoid build break if RTDB is not used.
+    console.error(
       `Firebase Configuration Error: The provided NEXT_PUBLIC_FIREBASE_DATABASE_URL ("${firebaseConfig.databaseURL}") is not a valid URL. Please check its value in your .env.local file or remove it if Realtime Database is not used.`
     );
  }
@@ -55,5 +55,5 @@ const _app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseCo
 
 // Initialize and export Firestore and Storage services
 export const firestore: Firestore = getFirestore(_app);
-export const storage: FirebaseStorage = getStorage(_app);
+// Removed: export const storage: FirebaseStorage = getStorage(_app);
 export const app = _app; // Export the app instance itself

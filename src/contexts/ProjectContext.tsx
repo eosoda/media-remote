@@ -35,6 +35,8 @@ import {
 } from "firebase/firestore";
 import { minioS3Client, MINIO_BUCKET_NAME } from "@/lib/minio"; 
 import { DeleteObjectCommand } from "@aws-sdk/client-s3";
+// Removed Firebase Storage imports as they are no longer used
+// import { ref as storageRef, uploadBytesResumable, getDownloadURL, deleteObject as deleteFileFromFirebase } from "firebase/storage";
 
 
 // Firestore collection names
@@ -273,13 +275,12 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     const projectData = projectSnapshot.data() as ProjectDocumentData;
 
     const minioEndpoint = process.env.NEXT_PUBLIC_MINIO_ENDPOINT;
-    const minioBucket = MINIO_BUCKET_NAME; // Use the imported constant
+    const minioBucket = MINIO_BUCKET_NAME; 
 
     if (!minioEndpoint || !minioBucket) {
-        console.error("MinIO endpoint or bucket name not configured correctly.");
-        throw new Error("MinIO configuration missing.");
+        console.error("MinIO endpoint or bucket name not configured correctly in environment variables.");
+        throw new Error("MinIO configuration missing. Cannot construct media URL.");
     }
-    // Ensure no double slashes if endpoint already has one
     const endpoint = minioEndpoint.endsWith('/') ? minioEndpoint.slice(0, -1) : minioEndpoint;
     const publicUrl = `${endpoint}/${minioBucket}/${minioObjectKey}`;
 
@@ -396,8 +397,6 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
                 console.log(`Successfully deleted ${mediaData.storagePath} from MinIO during project deletion.`);
             } catch (storageError) {
                 console.error(`Error deleting ${mediaData.storagePath} from MinIO during project deletion:`, storageError);
-                // Decide if you want to stop the whole process or continue deleting from Firestore
-                // For now, we'll log and continue with Firestore deletion.
             }
         }
         batch.delete(mediaDoc.ref);
@@ -585,4 +584,3 @@ export const useProjects = (): ProjectContextType => {
   }
   return context;
 };
-
