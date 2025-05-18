@@ -45,6 +45,7 @@ export default function ProjectDetailPage() {
   }
 
   return (
+    
     <div className="container mx-auto py-8 space-y-8">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
@@ -54,7 +55,9 @@ export default function ProjectDetailPage() {
             </Link>
           </Button>
           <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
-          {/* PIN display removed from here */}
+          <span className="text-sm font-mono">
+            PIN: {project.instancePin}
+          </span>
         </div>
         <div className="flex space-x-2">
           <Button asChild>
@@ -78,7 +81,7 @@ export default function ProjectDetailPage() {
             <CardDescription>View and manage uploaded media files for "{project.name}".</CardDescription>
         </CardHeader>
         <CardContent>
-            <MediaGallery project={project} showSetCurrent={true} />
+            <MediaGallery showSetCurrent={true} />
         </CardContent>
       </Card>
     </div>

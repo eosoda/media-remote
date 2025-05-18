@@ -44,8 +44,7 @@ export function ProjectList({ projectsToDisplay, listContext = "instance" }: Pro
         title: "Error Deleting Project",
         description: `Failed to delete "${projectName}". Please try again.`,
         variant: "destructive",
-      });
-      console.error("Failed to delete project:", error);
+      });;
     } finally {
       setDeletingProjectId(null);
     }

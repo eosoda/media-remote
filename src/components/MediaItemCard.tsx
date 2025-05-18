@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 interface MediaItemCardProps {
+  projectId: string;
   media: MediaFile;
   isEffectivelyActive: boolean;
   interactive: boolean;
@@ -96,9 +97,9 @@ const MediaItemCardComponent: React.FC<MediaItemCardProps> = ({
           )
         )}
 
-        {!(showSetCurrent) && !interactive && <div className="flex-grow" />}
+        {!(showSetCurrent) && interactive && <div className="flex-grow" />}
 
-        {!interactive && (
+        {interactive && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button

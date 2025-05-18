@@ -48,6 +48,7 @@ interface ProjectContextType {
   projects: Project[];
   instanceProjects: Project[];
   activeProjectForMenu: Project | null;
+  activeProjectMedia: MediaFile[]; // Added for real-time media updates on the active project
   instancePin: string | null;
   isLoading: boolean;
   isUserAdmin: boolean;
@@ -105,6 +106,7 @@ const generateInstancePin = (): string => {
 export const ProjectProvider = ({ children }: { children: ReactNode }) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [instanceProjects, setInstanceProjects] = useState<Project[]>([]);
+  const [activeProjectMedia, setActiveProjectMedia] = useState<MediaFile[]>([]); // New state for active project media
   const [activeProjectForMenuId, setActiveProjectForMenuId] = useState<
     string | null
   >(null);
@@ -151,7 +153,6 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
           lastSeen: Timestamp.now().toMillis(),
         });
       } catch (error) {
-        console.error("Failed to create instance display state for PIN:", pin, error);
       }
     }
   }, []);
@@ -210,6 +211,36 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     );
     return () => unsubscribeProjects();
   }, []);
+
+  // Effect to listen to media subcollection of the active project
+  useEffect(() => {
+    if (!activeProjectForMenuId) {
+      setActiveProjectMedia([]);
+      return;
+    }
+
+    const projectDocRef = doc(firestore, PROJECTS_COLLECTION, activeProjectForMenuId);
+    const mediaCollectionRef = collection(projectDocRef, MEDIA_SUBCOLLECTION);
+    const mediaQuery = query(mediaCollectionRef, orderBy("uploadedAt", "asc"));
+
+    const unsubscribeMedia = onSnapshot(mediaQuery, (mediaSnapshot) => {
+      const fetchedMedia: MediaFile[] = mediaSnapshot.docs.map((mediaDoc) => {
+        const mediaData = mediaDoc.data() as MediaFileDocumentData;
+        return {
+          id: mediaDoc.id,
+          ...mediaData,
+          uploadedAt: new Date(mediaData.uploadedAt),
+        };
+      });
+      setActiveProjectMedia(fetchedMedia);
+    }, (error) => {
+      console.error("Firestore error fetching media for active project:", error);
+      setActiveProjectMedia([]);
+    });
+
+    // Cleanup function to unsubscribe when activeProjectForMenuId changes or component unmounts
+    return () => unsubscribeMedia();
+  }, [activeProjectForMenuId]); // Dependes only on the active project ID
 
   useEffect(() => {
     if (instancePin && projects.length > 0) {
@@ -304,11 +335,6 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       const mediaSubcollectionRef = collection(projectDocRef, MEDIA_SUBCOLLECTION);
       const mediaDocRef = doc(mediaSubcollectionRef, mediaId);
       await setDoc(mediaDocRef, mediaDocData);
-      
-      const currentProjectMediaSnapshot = await getDocs(query(mediaSubcollectionRef));
-      if (currentProjectMediaSnapshot.docs.length === 1 || !projectData.currentMediaId) {
-        await updateDoc(projectDocRef, { currentMediaId: mediaId });
-      }
       return newMediaFile; 
     } catch (error) {
       console.error("Error saving media metadata to Firestore:", error);
@@ -543,6 +569,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
         projects,
         instanceProjects,
         activeProjectForMenu,
+        activeProjectMedia, // Added active project media to context value
         instancePin,
         isLoading,
         isUserAdmin,

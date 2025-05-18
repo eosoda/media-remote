@@ -14,7 +14,8 @@ interface MediaUploaderProps {
   onUploadComplete?: () => void;
 }
 
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+const FILE_SIZE = 200
+const MAX_FILE_SIZE = FILE_SIZE * 1024 * 1024; // 50MB
 const ACCEPTED_FILE_TYPES = {
   "image/jpeg": [".jpg", ".jpeg"],
   "image/png": [".png"],
@@ -90,7 +91,6 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
           }
           
           const { presignedUrl, objectKey, method } = await presignedUrlResponse.json();
-          console.log(`Received presigned URL for ${file.name}: ${presignedUrl}, Method: ${method}, ObjectKey: ${objectKey}`); // Log the presigned URL
           setUploadingFiles(prev => prev.map(f => f.file === file ? {...f, progress: 25, objectKey } : f));
 
           // 2. Upload file to MinIO using the presigned URL
@@ -130,7 +130,6 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
             throw new Error("Failed to add media to project database after upload.");
           }
         } catch (error) {
-          console.error("Upload failed for", file.name, error);
           const errorMessage = error instanceof Error ? error.message : `Unknown upload error for ${file.name}.`;
           setUploadingFiles(prev => prev.map(f => f.file === file ? {...f, progress: 100, error: errorMessage, status: 'error' as const} : f));
           toast({
@@ -170,10 +169,9 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center"><UploadCloud className="mr-2 h-6 w-6 text-primary"/> Upload Media to MinIO</CardTitle>
+        <CardTitle className="flex items-center"><UploadCloud className="mr-2 h-6 w-6 text-primary"/> Upload Media</CardTitle>
         <CardDescription>
-          Drag & drop images (JPG, PNG, GIF, WebP) or videos (MP4, WebM) here, or click to select files. Max 50MB per file.
-          Files will be uploaded to your configured MinIO instance.
+          Drag & drop images (JPG, PNG, GIF, WebP) or videos (MP4, WebM) here, or click to select files. Max <span className="font-semibold">{FILE_SIZE}MB</span> per file.
         </CardDescription>
       </CardHeader>
       <CardContent>

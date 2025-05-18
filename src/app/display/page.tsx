@@ -19,6 +19,7 @@ export default function GenericDisplayPage() {
     listenToInstanceDisplayState,
     setActiveProjectForMenu,
     getProject,
+    activeProjectMedia, // Import activeProjectMedia from context
   } = useProjects();
 
   const [ownInstancePin, setOwnInstancePin] = useState<string | null>(null);
@@ -52,27 +53,39 @@ export default function GenericDisplayPage() {
     return () => unsubscribe();
   }, [ownInstancePin, listenToInstanceDisplayState, setActiveProjectForMenu]);
 
+  // Set the active project in context based on the instance display data
+  useEffect(() => {
+    if (instanceDisplayData?.currentProjectId) {
+      setActiveProjectForMenu(instanceDisplayData.currentProjectId);
+    }
+    // Optional: setActiveProjectForMenu(null) could be added here if you want to clear the active project when no project is linked to the instance
+  }, [instanceDisplayData?.currentProjectId, setActiveProjectForMenu]);
+
   const currentProject = useMemo(() => {
     if (projectsLoading || !instanceDisplayData?.currentProjectId) return null;
     return getProject(instanceDisplayData.currentProjectId) || null;
   }, [projectsLoading, instanceDisplayData, getProject]);
   
   useEffect(() => {
-    if (currentProject && instanceDisplayData?.currentMediaId) {
+    // Use activeProjectMedia from the context which is updated by the real-time listener
+    if (activeProjectMedia && instanceDisplayData?.currentMediaId) {
       const mediaToDisplay =
-        currentProject.media.find(m => m.id === instanceDisplayData.currentMediaId) ||
-        currentProject.media[0] || 
+        activeProjectMedia.find(m => m.id === instanceDisplayData.currentMediaId) ||
+        activeProjectMedia[0] || // Fallback to the first media if currentMediaId is not found
         null;
       setCurrentMedia(mediaToDisplay);
     } else if (instanceDisplayData && !instanceDisplayData.currentProjectId) {
-      setCurrentMedia(null); 
-    } else if (!instanceDisplayData?.currentMediaId && currentProject) {
-      setCurrentMedia(currentProject.media[0] || null);
+      // No project linked to the instance, clear current media
+      setCurrentMedia(null);
+    } else if (!instanceDisplayData?.currentMediaId && activeProjectMedia) {
+       // A project is active in context (has activeProjectMedia) but no specific media is set in instance data,
+       // default to the first media in the active project's list.
+      setCurrentMedia(activeProjectMedia[0] || null);
     }
      else {
       setCurrentMedia(null);
     }
-  }, [currentProject, instanceDisplayData]);
+  }, [activeProjectMedia, instanceDisplayData]); // Depend on activeProjectMedia and instanceDisplayData
 
 
   if (isLoadingPin || (projectsLoading && !currentProject && instanceDisplayData?.currentProjectId)) {

@@ -28,7 +28,6 @@ export default function HomePage() {
         })
         .catch(err => {
           toast({ title: "Copy Failed", description: "Could not copy PIN.", variant: "destructive" });
-          console.error('Failed to copy PIN: ', err);
         });
     }
   };

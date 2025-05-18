@@ -69,7 +69,6 @@ export function AdminInstanceTable() {
       setInstances(enriched);
     } catch (error) {
       toast({ title: "Error", description: "Failed to load display instances.", variant: "destructive" });
-      console.error("Failed to load display instances:", error)
       setInstances([]);
     } finally {
         setIsLoadingInstances(false);
@@ -90,7 +89,6 @@ export function AdminInstanceTable() {
       await fetchAndEnrichInstances(); 
     } catch (error) {
       toast({ title: "Error", description: `Failed to clear instance ${pin}.`, variant: "destructive" });
-      console.error(`Failed to clear instance ${pin}:`, error);
     } finally {
       setIsProcessingInstance(null);
     }
@@ -104,7 +102,6 @@ export function AdminInstanceTable() {
       setInstances(prev => prev.filter(inst => inst.pin !== pin));
     } catch (error) {
        toast({ title: "Error", description: `Failed to delete instance ${pin}.`, variant: "destructive" });
-       console.error(`Failed to delete instance ${pin}:`, error);
     } finally {
       setIsProcessingInstance(null);
     }
@@ -130,7 +127,6 @@ export function AdminInstanceTable() {
       await fetchAndEnrichInstances(); 
     } catch (error) {
         toast({ title: "Error", description: "Failed to delete some or all old instances. Please check console for details.", variant: "destructive" });
-        console.error("Failed to delete old instances:", error);
     } finally {
       setIsDeletingOldInstances(false);
       setShowDeleteOldDialog(false);

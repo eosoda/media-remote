@@ -56,7 +56,6 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error generating presigned URL for MinIO:', error);
     let errorMessage = 'Failed to generate upload URL.';
     if (error instanceof Error) {
         // Avoid exposing too much internal detail in client-facing error messages

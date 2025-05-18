@@ -21,14 +21,10 @@ if (!firebaseConfig.apiKey) {
 
 // Check for placeholder or undefined Project ID
 if (!firebaseConfig.projectId || firebaseConfig.projectId === "your_project_id") {
-  // This was changed to console.error to avoid breaking build if only Firestore is used and projectId is still placeholder for RTDB
+
   console.error(
     "Firebase Configuration Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID is not defined or is a placeholder. This is a required field for Firestore. Please set it in your .env.local file with your actual Firebase Project ID."
   );
-  // To actually throw error and stop build if project ID is critical for all firebase services:
-  // throw new Error(
-  //   "Firebase Configuration Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID is not defined or is a placeholder. This is a required field. Please set it in your .env.local file with your actual Firebase Project ID."
-  // );
 }
 
 
