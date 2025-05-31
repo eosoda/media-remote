@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useAutoHide } from '@/hooks/useAutoHide';
+
 export default function ProjectSpecificDisplayPage() {
   const params = useParams();
   const projectId = params.projectId as string;
@@ -29,8 +30,12 @@ export default function ProjectSpecificDisplayPage() {
         project.media[0] || 
         null;
       setCurrentMedia(mediaToDisplay);
+      // Set document title only after project is confirmed
+      document.title = `Display: ${project.name} - Media Remote`;
     } else {
       setCurrentMedia(null);
+      // Set document title for not found case
+      document.title = "Display: Project Not Found - Media Remote";
     }
   }, [project, isLoading, setActiveProjectForMenu, projectId]);
 
@@ -60,11 +65,15 @@ export default function ProjectSpecificDisplayPage() {
   
   return ( 
     <div className={`fixed inset-0 bg-black z-50 ${!controlsVisible ? 'hide-cursor' : ''}`}>
-      <MediaDisplayComponent media={currentMedia} projectName={project.name} controlsVisible={controlsVisible} />
+      <MediaDisplayComponent 
+        media={currentMedia} 
+        projectName={project.name} 
+        controlsVisible={controlsVisible}
+        defaultDisplayBackground={project.defaultDisplayBackground}
+      />
       <div 
         className={`absolute top-4 right-4 flex space-x-2 transition-opacity duration-300 ${controlsVisible ? 'opacity-50 hover:opacity-100' : 'opacity-0 pointer-events-none'}`}
       >
-        {/* Link back to the project management page, not the generic display or remote selection */}
         <Button variant="secondary" size="sm" asChild>
           <Link href={`/projects/${project.id}`} title="Back to Project Details">
             <ArrowLeft className="mr-0 sm:mr-2 h-4 w-4" /> <span className="hidden sm:inline">Project Details</span>

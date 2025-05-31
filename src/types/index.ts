@@ -1,11 +1,15 @@
+
 export interface MediaFile {
   id: string;
   name: string;
   type: "image" | "video";
-  url: string; // URL from Firebase Storage
+  url: string; // URL from MinIO
   size: number;
   uploadedAt: Date;
-  storagePath: string; // Firebase Storage path
+  storagePath: string; // MinIO object key
+  thumbnailUrl?: string; // URL for video thumbnail from MinIO
+  thumbnailStoragePath?: string; // MinIO object key for video thumbnail
+  order: number; // For drag-and-drop ordering
 }
 
 export interface Project {
@@ -16,6 +20,7 @@ export interface Project {
   currentMediaId: string | null;
   createdAt: Date;
   instancePin: string; // Associate project with an instance PIN
+  defaultDisplayBackground?: string; // New field: CSS color or image URL
 }
 
 export interface InstanceDisplayState {
@@ -28,11 +33,10 @@ export interface InstanceDisplayState {
 export interface ProjectDocumentData {
   name: string;
   slug: string;
-  // Media is a subcollection, so not directly here.
-  // currentMediaId might be stored if frequently accessed, or derived.
   currentMediaId: string | null;
   createdAt: number; // Store as timestamp
   instancePin: string;
+  defaultDisplayBackground?: string; // New field: CSS color or image URL
 }
 
 // Firestore document representation for MediaFile (within Project's media subcollection)
@@ -43,4 +47,7 @@ export interface MediaFileDocumentData {
   size: number;
   uploadedAt: number; // Store as timestamp
   storagePath: string;
+  thumbnailUrl?: string;
+  thumbnailStoragePath?: string;
+  order: number; // For drag-and-drop ordering
 }

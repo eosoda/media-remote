@@ -6,16 +6,13 @@ import { useDropzone } from "react-dropzone";
 import { useProjects } from "@/contexts/ProjectContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { UploadCloud, FileCheck, FileWarning, Loader2 } from "lucide-react";
+import { UploadCloud, FileCheck, FileWarning, Loader2, Film } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { v4 as uuidv4 } from 'uuid';
+// AI Description related imports removed
 
-interface MediaUploaderProps {
-  projectId: string;
-  onUploadComplete?: () => void;
-}
-
-const FILE_SIZE = 200
-const MAX_FILE_SIZE = FILE_SIZE * 1024 * 1024; // 50MB
+const FILE_SIZE = 200;
+const MAX_FILE_SIZE = FILE_SIZE * 1024 * 1024; // 200MB
 const ACCEPTED_FILE_TYPES = {
   "image/jpeg": [".jpg", ".jpeg"],
   "image/png": [".png"],
@@ -25,18 +22,78 @@ const ACCEPTED_FILE_TYPES = {
   "video/webm": [".webm"],
 };
 
+interface MediaUploaderProps {
+  projectId: string;
+  onUploadComplete?: () => void;
+}
+
 interface UploadingFileState {
+  id: string; // Unique ID for this upload instance
   file: File;
   progress: number;
   error?: string;
-  status: 'pending' | 'getting_url' | 'uploading' | 'processing_db' | 'complete' | 'error';
+  status: 'pending' | 'generating_thumb' | 'getting_thumb_url' | 'uploading_thumb' | 'getting_url' | 'getting_video_url' | 'uploading' | 'uploading_video' | 'processing_db' | 'complete' | 'error';
   objectKey?: string;
+  thumbnailObjectKey?: string;
 }
+
+const generateVideoThumbnail = (videoFile: File): Promise<{ thumbnailBlob: Blob, thumbnailFileName: string } | null> => {
+  return new Promise((resolve) => {
+    if (!videoFile.type.startsWith('video/')) {
+      resolve(null);
+      return;
+    }
+
+    const video = document.createElement('video');
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    video.onloadeddata = () => {
+      video.currentTime = Math.min(1, video.duration / 2); // Seek to 1s or midpoint
+    };
+
+    video.onseeked = () => {
+      if (!context) {
+        resolve(null);
+        return;
+      }
+      const aspectRatio = video.videoWidth / video.videoHeight;
+      canvas.width = 300; 
+      canvas.height = 300 / aspectRatio;
+      
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const extension = videoFile.name.split('.').pop();
+          const baseName = videoFile.name.substring(0, videoFile.name.length - (extension ? extension.length + 1 : 0));
+          resolve({ thumbnailBlob: blob, thumbnailFileName: `${baseName}_thumb.png` });
+        } else {
+          resolve(null);
+        }
+        URL.revokeObjectURL(video.src); 
+      }, 'image/png', 0.85); 
+    };
+
+    video.onerror = () => {
+      console.error("Error loading video for thumbnail generation");
+      URL.revokeObjectURL(video.src);
+      resolve(null);
+    };
+    
+    video.src = URL.createObjectURL(videoFile);
+    video.load(); 
+  });
+};
+
 
 export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProps) {
   const { addMediaToProject, instancePin } = useProjects(); 
   const { toast } = useToast();
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFileState[]>([]);
+
+  const updateUploadState = (id: string, updates: Partial<UploadingFileState>) => {
+    setUploadingFiles(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+  };
 
   const onDrop = useCallback(
     async (acceptedFiles: File[], rejectedFiles: any[]) => {
@@ -49,10 +106,10 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
         return;
       }
       if (rejectedFiles.length > 0) {
-        rejectedFiles.forEach((rejectedFile: any) => { // Type rejectedFile as any for now based on useDropzone type
-          rejectedFile.errors.forEach((error: { message: string }) => { // Type error as { message: string }
+        rejectedFiles.forEach((rejectedFile: any) => {
+          rejectedFile.errors.forEach((error: { message: string }) => {
              toast({
-                title: `File Error: ${rejectedFile.file.name}`, // Access file name safely
+                title: `File Error: ${rejectedFile.file.name}`,
                 description: error.message,
                 variant: "destructive",
               });
@@ -60,19 +117,60 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
         });
       }
       
-      const newUploads = acceptedFiles.map(file => ({ file, progress: 0, status: 'pending' as const }));
+      const newUploads: UploadingFileState[] = acceptedFiles.map(file => ({ 
+        id: uuidv4(), file, progress: 0, status: 'pending' as const 
+      }));
       setUploadingFiles(prev => [
         ...prev.filter(f => f.status !== 'complete' && f.status !== 'error'),
         ...newUploads
       ]);
 
-      for (let i = 0; i < newUploads.length; i++) {
-        const currentUpload = newUploads[i];
-        const { file } = currentUpload;
+      for (const currentUpload of newUploads) {
+        const { file, id: uploadId } = currentUpload;
+        let thumbnailObjectKey: string | undefined = undefined;
+        let videoObjectKey: string | undefined = undefined;
 
         try {
-          // 1. Get presigned URL from our API
-          setUploadingFiles(prev => prev.map(f => f.file === file ? {...f, status: 'getting_url' as const, progress: 10} : f));
+          if (file.type.startsWith("video/")) {
+            updateUploadState(uploadId, { status: 'generating_thumb', progress: 5 });
+            const thumbnailData = await generateVideoThumbnail(file);
+
+            if (thumbnailData) {
+              const { thumbnailBlob, thumbnailFileName } = thumbnailData;
+              updateUploadState(uploadId, { status: 'getting_thumb_url', progress: 10 });
+
+              const thumbPresignedUrlResponse = await fetch('/api/minio/upload-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  fileName: thumbnailFileName, 
+                  fileType: thumbnailBlob.type, 
+                  projectId,
+                  instancePin
+                }),
+              });
+
+              if (!thumbPresignedUrlResponse.ok) throw new Error(await thumbPresignedUrlResponse.json().then(e => e.error || 'Failed to get thumbnail upload URL'));
+              
+              const { presignedUrl: thumbPresignedUrl, objectKey: thumbObjKey, method: thumbMethod } = await thumbPresignedUrlResponse.json();
+              thumbnailObjectKey = thumbObjKey;
+              updateUploadState(uploadId, { thumbnailObjectKey, progress: 15 });
+
+              updateUploadState(uploadId, { status: 'uploading_thumb', progress: 20 });
+              const uploadToMinioThumbResponse = await fetch(thumbPresignedUrl, {
+                method: thumbMethod || 'PUT',
+                body: thumbnailBlob,
+                headers: { 'Content-Type': thumbnailBlob.type },
+              });
+              if (!uploadToMinioThumbResponse.ok) throw new Error('Failed to upload thumbnail to MinIO');
+              updateUploadState(uploadId, { progress: 25 });
+            } else {
+              console.warn(`Could not generate thumbnail for ${file.name}`);
+            }
+          }
+
+          const mainFileProgressStart = file.type.startsWith("video/") ? 25 : 10;
+          updateUploadState(uploadId, { status: file.type.startsWith("video/") ? 'getting_video_url' : 'getting_url', progress: mainFileProgressStart });
           
           const presignedUrlResponse = await fetch('/api/minio/upload-url', {
             method: 'POST',
@@ -91,13 +189,13 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
           }
           
           const { presignedUrl, objectKey, method } = await presignedUrlResponse.json();
-          setUploadingFiles(prev => prev.map(f => f.file === file ? {...f, progress: 25, objectKey } : f));
-
-          // 2. Upload file to MinIO using the presigned URL
-          setUploadingFiles(prev => prev.map(f => f.file === file ? {...f, status: 'uploading' as const, progress: 30} : f));
+          videoObjectKey = objectKey;
+          
+          updateUploadState(uploadId, { objectKey: videoObjectKey, progress: mainFileProgressStart + 15 });
+          updateUploadState(uploadId, { status: file.type.startsWith("video/") ? 'uploading_video' : 'uploading', progress: mainFileProgressStart + 20 });
           
           const uploadToMinioResponse = await fetch(presignedUrl, {
-            method: method || 'PUT', // Use method from API response, default to PUT
+            method: method || 'PUT', 
             body: file,
             headers: { 'Content-Type': file.type },
           });
@@ -107,21 +205,17 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
              try {
                 const xmlError = new DOMParser().parseFromString(minioErrorText, "application/xml");
                 const errorMessageNode = xmlError.querySelector("Message");
-                if (errorMessageNode) {
-                    minioErrorText = errorMessageNode.textContent || minioErrorText;
-                }
+                if (errorMessageNode) minioErrorText = errorMessageNode.textContent || minioErrorText;
              } catch (e) { /* Ignore parsing error, use raw text */ }
-
             throw new Error(`Failed to upload to MinIO (status: ${uploadToMinioResponse.status}): ${minioErrorText || uploadToMinioResponse.statusText}`);
           }
-          setUploadingFiles(prev => prev.map(f => f.file === file ? {...f, progress: 75} : f));
-          
-          // 3. Add media metadata to Firestore via ProjectContext
-          setUploadingFiles(prev => prev.map(f => f.file === file ? {...f, status: 'processing_db' as const} : f));
-          const newMedia = await addMediaToProject(projectId, file, objectKey);
+          updateUploadState(uploadId, { progress: 85 }); // Adjusted progress assuming no AI step
+
+          updateUploadState(uploadId, { status: 'processing_db', progress: 90 });
+          const newMedia = await addMediaToProject(projectId, file, videoObjectKey, thumbnailObjectKey);
           
           if (newMedia) {
-            setUploadingFiles(prev => prev.map(f => f.file === file ? {...f, progress: 100, status: 'complete' as const} : f));
+            updateUploadState(uploadId, { progress: 100, status: 'complete' });
             toast({
               title: "Upload Successful",
               description: `${file.name} has been uploaded.`,
@@ -131,7 +225,7 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
           }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : `Unknown upload error for ${file.name}.`;
-          setUploadingFiles(prev => prev.map(f => f.file === file ? {...f, progress: 100, error: errorMessage, status: 'error' as const} : f));
+          updateUploadState(uploadId, { progress: 100, error: errorMessage, status: 'error' });
           toast({
             title: "Upload Failed",
             description: `Could not upload ${file.name}: ${errorMessage}`,
@@ -157,8 +251,14 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
   const getStatusText = (status: UploadingFileState['status']): string => {
     switch (status) {
       case 'pending': return 'Pending...';
+      case 'generating_thumb': return 'Generating thumbnail...';
+      case 'getting_thumb_url': return 'Preparing thumbnail upload...';
+      case 'uploading_thumb': return 'Uploading thumbnail...';
       case 'getting_url': return 'Preparing upload...';
+      case 'getting_video_url': return 'Preparing video upload...';
       case 'uploading': return 'Uploading to storage...';
+      case 'uploading_video': return 'Uploading video to storage...';
+      // Removed 'generating_description'
       case 'processing_db': return 'Saving to database...';
       case 'complete': return 'Complete!';
       case 'error': return 'Error';
@@ -171,7 +271,7 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
       <CardHeader>
         <CardTitle className="flex items-center"><UploadCloud className="mr-2 h-6 w-6 text-primary"/> Upload Media</CardTitle>
         <CardDescription>
-          Drag & drop images (JPG, PNG, GIF, WebP) or videos (MP4, WebM) here, or click to select files. Max <span className="font-semibold">{FILE_SIZE}MB</span> per file.
+          Drag & drop images (JPG, PNG, GIF, WebP) or videos (MP4, WebM) here, or click to select files. Max <span className="font-semibold">{FILE_SIZE}MB</span> per file. Video thumbnails will be generated.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -189,14 +289,14 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
         </div>
         {uploadingFiles.length > 0 && (
           <div className="mt-4 space-y-2">
-            {uploadingFiles.map(({ file, progress, error, status }, index) => (
-              <div key={`${file.name}-${index}`} className="p-2 border rounded-md">
+            {uploadingFiles.map(({ id, file, progress, error, status }) => (
+              <div key={id} className="p-2 border rounded-md">
                 <div className="flex items-center justify-between text-sm mb-1">
                   <span className="truncate max-w-[60%] font-medium">{file.name}</span>
                   <span className="text-xs text-muted-foreground">{getStatusText(status)}</span>
                   {status === 'error' && <FileWarning className="h-5 w-5 text-destructive ml-2" />}
                   {status === 'complete' && <FileCheck className="h-5 w-5 text-green-500 ml-2" />}
-                  {(status === 'pending' || status === 'getting_url' || status === 'uploading' || status === 'processing_db') && 
+                  {![ 'complete', 'error', 'pending'].includes(status) && 
                     !error && <Loader2 className="h-5 w-5 animate-spin text-primary ml-2" />}
                 </div>
                 <Progress value={progress} className={`h-2 ${status === 'error' ? 'bg-destructive/30 [&>div]:bg-destructive' : ''}`} />
@@ -209,3 +309,4 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
     </Card>
   );
 }
+

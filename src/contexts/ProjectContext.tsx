@@ -48,7 +48,7 @@ interface ProjectContextType {
   projects: Project[];
   instanceProjects: Project[];
   activeProjectForMenu: Project | null;
-  activeProjectMedia: MediaFile[]; // Added for real-time media updates on the active project
+  activeProjectMedia: MediaFile[];
   instancePin: string | null;
   isLoading: boolean;
   isUserAdmin: boolean;
@@ -60,7 +60,8 @@ interface ProjectContextType {
   addMediaToProject: ( 
     projectId: string,
     file: File, 
-    minioObjectKey: string
+    minioObjectKey: string,
+    thumbnailMinioObjectKey?: string
   ) => Promise<MediaFile | undefined>;
   deleteMedia: (projectId: string, mediaId: string) => Promise<void>; 
   setCurrentMediaForProject: (
@@ -83,11 +84,20 @@ interface ProjectContextType {
   ) => () => void;
   createInstanceDisplayStateIfNeeded: (pin: string) => Promise<void>;
   updateProjectName: (projectId: string, newName: string) => Promise<void>;
+  updateProjectSettings: (
+    projectId: string,
+    settings: {
+      name?: string;
+      defaultDisplayBackground?: string | null; 
+      defaultDisplayBackgroundStoragePath?: string | null; 
+    }
+  ) => Promise<void>;
   getAllInstanceDisplayStates: () => Promise<
     Record<string, InstanceDisplayState>
   >;
   clearInstanceDisplayState: (pin: string) => Promise<void>;
   deleteInstanceDisplayStateFromAdmin: (pin: string) => Promise<void>;
+  updateMediaOrder: (projectId: string, orderedMedia: MediaFile[]) => Promise<void>;
 }
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
@@ -106,7 +116,7 @@ const generateInstancePin = (): string => {
 export const ProjectProvider = ({ children }: { children: ReactNode }) => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [instanceProjects, setInstanceProjects] = useState<Project[]>([]);
-  const [activeProjectMedia, setActiveProjectMedia] = useState<MediaFile[]>([]); // New state for active project media
+  const [activeProjectMedia, setActiveProjectMedia] = useState<MediaFile[]>([]);
   const [activeProjectForMenuId, setActiveProjectForMenuId] = useState<
     string | null
   >(null);
@@ -153,6 +163,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
           lastSeen: Timestamp.now().toMillis(),
         });
       } catch (error) {
+        console.error("Error creating instance display state:", error)
       }
     }
   }, []);
@@ -179,14 +190,15 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
             projectDoc.ref,
             MEDIA_SUBCOLLECTION
           );
-          const mediaQuery = query(mediaCollectionRef, orderBy("uploadedAt", "asc"));
+          const mediaQuery = query(mediaCollectionRef, orderBy("order", "asc"));
           const mediaSnapshot = await getDocs(mediaQuery);
-          const mediaFiles: MediaFile[] = mediaSnapshot.docs.map((mediaDoc) => {
+          const mediaFiles: MediaFile[] = mediaSnapshot.docs.map((mediaDoc, index) => {
             const mediaData = mediaDoc.data() as MediaFileDocumentData;
             return {
               id: mediaDoc.id, 
               ...mediaData,
               uploadedAt: new Date(mediaData.uploadedAt),
+              order: mediaData.order !== undefined ? mediaData.order : index, 
             };
           });
 
@@ -198,6 +210,8 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
             currentMediaId: projectData.currentMediaId,
             createdAt: new Date(projectData.createdAt),
             instancePin: projectData.instancePin,
+            defaultDisplayBackground: projectData.defaultDisplayBackground,
+            defaultDisplayBackgroundStoragePath: projectData.defaultDisplayBackgroundStoragePath,
           });
         }
         setProjects(fetchedProjects);
@@ -212,7 +226,6 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribeProjects();
   }, []);
 
-  // Effect to listen to media subcollection of the active project
   useEffect(() => {
     if (!activeProjectForMenuId) {
       setActiveProjectMedia([]);
@@ -221,15 +234,16 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
 
     const projectDocRef = doc(firestore, PROJECTS_COLLECTION, activeProjectForMenuId);
     const mediaCollectionRef = collection(projectDocRef, MEDIA_SUBCOLLECTION);
-    const mediaQuery = query(mediaCollectionRef, orderBy("uploadedAt", "asc"));
+    const mediaQuery = query(mediaCollectionRef, orderBy("order", "asc")); 
 
     const unsubscribeMedia = onSnapshot(mediaQuery, (mediaSnapshot) => {
-      const fetchedMedia: MediaFile[] = mediaSnapshot.docs.map((mediaDoc) => {
+      const fetchedMedia: MediaFile[] = mediaSnapshot.docs.map((mediaDoc, index) => { 
         const mediaData = mediaDoc.data() as MediaFileDocumentData;
         return {
           id: mediaDoc.id,
           ...mediaData,
           uploadedAt: new Date(mediaData.uploadedAt),
+          order: mediaData.order !== undefined ? mediaData.order : index, 
         };
       });
       setActiveProjectMedia(fetchedMedia);
@@ -238,9 +252,8 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       setActiveProjectMedia([]);
     });
 
-    // Cleanup function to unsubscribe when activeProjectForMenuId changes or component unmounts
     return () => unsubscribeMedia();
-  }, [activeProjectForMenuId]); // Dependes only on the active project ID
+  }, [activeProjectForMenuId]);
 
   useEffect(() => {
     if (instancePin && projects.length > 0) {
@@ -289,16 +302,13 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
   const addMediaToProject = useCallback(async (
     projectId: string,
     file: File, 
-    minioObjectKey: string
+    minioObjectKey: string,
+    thumbnailMinioObjectKey?: string
   ): Promise<MediaFile | undefined> => {
     const projectDocRef = doc(firestore, PROJECTS_COLLECTION, projectId);
-    const projectSnapshot = await getDoc(projectDocRef);
 
-    if (!projectSnapshot.exists()) {
-      console.error(`Project with ID ${projectId} not found.`);
-      return undefined;
-    }
-    const projectData = projectSnapshot.data() as ProjectDocumentData;
+    const projectFromState = projects.find(p => p.id === projectId);
+    const currentMediaCount = projectFromState?.media?.length || 0;
 
     const minioEndpoint = process.env.NEXT_PUBLIC_MINIO_ENDPOINT;
     const minioBucket = MINIO_BUCKET_NAME; 
@@ -310,7 +320,13 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     const endpoint = minioEndpoint.endsWith('/') ? minioEndpoint.slice(0, -1) : minioEndpoint;
     const publicUrl = `${endpoint}/${minioBucket}/${minioObjectKey}`;
 
+    let thumbnailPublicUrl: string | undefined = undefined;
+    if (thumbnailMinioObjectKey) {
+      thumbnailPublicUrl = `${endpoint}/${minioBucket}/${thumbnailMinioObjectKey}`;
+    }
+
     const mediaId = uuidv4(); 
+    const currentTime = Date.now();
 
     const newMediaFile: MediaFile = {
       id: mediaId, 
@@ -318,8 +334,11 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       type: file.type.startsWith("image/") ? "image" : "video",
       url: publicUrl, 
       size: file.size,
-      uploadedAt: new Date(),
+      uploadedAt: new Date(currentTime),
       storagePath: minioObjectKey, 
+      thumbnailUrl: thumbnailPublicUrl,
+      thumbnailStoragePath: thumbnailMinioObjectKey,
+      order: currentMediaCount, 
     };
 
     const mediaDocData: MediaFileDocumentData = {
@@ -327,113 +346,205 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       type: newMediaFile.type,
       url: newMediaFile.url,
       size: newMediaFile.size,
-      uploadedAt: newMediaFile.uploadedAt.getTime(), 
+      uploadedAt: currentTime, 
       storagePath: newMediaFile.storagePath,
+      order: newMediaFile.order,
+      ...(newMediaFile.thumbnailUrl && { thumbnailUrl: newMediaFile.thumbnailUrl }),
+      ...(newMediaFile.thumbnailStoragePath && { thumbnailStoragePath: newMediaFile.thumbnailStoragePath }),
     };
     
     try {
       const mediaSubcollectionRef = collection(projectDocRef, MEDIA_SUBCOLLECTION);
-      const mediaDocRef = doc(mediaSubcollectionRef, mediaId);
-      await setDoc(mediaDocRef, mediaDocData);
+      const mediaDocRefFirestore = doc(mediaSubcollectionRef, mediaId);
+      await setDoc(mediaDocRefFirestore, mediaDocData); 
+      
+      setProjects(prevProjects =>
+        prevProjects.map(p => {
+          if (p.id === projectId) {
+            const updatedMediaArray = p.media ? [...p.media, newMediaFile] : [newMediaFile];
+            updatedMediaArray.sort((a, b) => a.order - b.order);
+            return { 
+              ...p, 
+              media: updatedMediaArray
+            };
+          }
+          return p;
+        })
+      );
+
+      if (activeProjectForMenuId === projectId) {
+        setActiveProjectMedia(prevMedia => {
+          const updatedMediaArray = prevMedia ? [...prevMedia, newMediaFile] : [newMediaFile];
+          updatedMediaArray.sort((a, b) => a.order - b.order);
+          return updatedMediaArray;
+        });
+      }
+      
       return newMediaFile; 
     } catch (error) {
       console.error("Error saving media metadata to Firestore:", error);
       return undefined;
     }
-  }, []);
+  }, [projects, activeProjectForMenuId]);
   
-  const deleteMedia = useCallback(async (
+const deleteMedia = useCallback(async (
     projectId: string,
-    mediaId: string 
+    mediaId: string
   ): Promise<void> => {
-    const project = getProject(projectId);
-    const mediaToDelete = project?.media.find((m) => m.id === mediaId);
-    
-    if (!project || !mediaToDelete || !mediaToDelete.storagePath) {
-        console.error("Project or media (or its MinIO storagePath) not found for deletion.");
-        throw new Error("Media information incomplete for MinIO deletion.");
+    const projectRef = getProject(projectId); 
+    const mediaToDelete = projectRef?.media.find((m) => m.id === mediaId);
+
+    if (!projectRef || !mediaToDelete) {
+      console.error("Project or media not found for deletion.", { projectId, mediaId, projectRef });
+      throw new Error("Media information incomplete for deletion.");
     }
 
     if (!minioS3Client || !MINIO_BUCKET_NAME) {
-        console.error("MinIO S3 client or bucket name not configured for deletion.");
-        throw new Error("MinIO client/bucket not configured.");
+      console.error("MinIO S3 client or bucket name not configured for deletion.");
+      throw new Error("MinIO client/bucket not configured.");
     }
-
     try {
-      const deleteCommand = new DeleteObjectCommand({
-        Bucket: MINIO_BUCKET_NAME,
-        Key: mediaToDelete.storagePath, 
-      });
-      await minioS3Client.send(deleteCommand);
-      console.log(`Successfully deleted ${mediaToDelete.storagePath} from MinIO.`);
-
-      const mediaDocRef = doc(
-        firestore,
-        PROJECTS_COLLECTION,
-        projectId,
-        MEDIA_SUBCOLLECTION,
-        mediaId 
-      );
-      await deleteDoc(mediaDocRef);
-
-      const projectDocRef = doc(firestore, PROJECTS_COLLECTION, projectId);
-      const projectSnapshot = await getDoc(projectDocRef);
-      if(projectSnapshot.exists()){
-        const projectData = projectSnapshot.data() as ProjectDocumentData;
-        if (projectData.currentMediaId === mediaId) {
-          const remainingMediaSnapshot = await getDocs(query(collection(projectDocRef, MEDIA_SUBCOLLECTION), orderBy("uploadedAt", "asc")));
-          const newCurrentMediaId = remainingMediaSnapshot.docs.length > 0 ? remainingMediaSnapshot.docs[0].id : null;
-          await updateDoc(projectDocRef, { currentMediaId: newCurrentMediaId });
-        }
+      if (mediaToDelete.storagePath) {
+        const deleteCommand = new DeleteObjectCommand({ Bucket: MINIO_BUCKET_NAME, Key: mediaToDelete.storagePath });
+        await minioS3Client.send(deleteCommand);
       }
-    } catch (error) {
-      console.error("Error deleting media (from MinIO or Firestore):", error);
-      throw error; 
+      if (mediaToDelete.thumbnailStoragePath) {
+        const deleteThumbnailCommand = new DeleteObjectCommand({ Bucket: MINIO_BUCKET_NAME, Key: mediaToDelete.thumbnailStoragePath });
+        await minioS3Client.send(deleteThumbnailCommand);
+      }
+    } catch (minioError) {
+      console.error("Error deleting from MinIO:", minioError);
+      throw new Error(`Failed to delete media from storage: ${minioError instanceof Error ? minioError.message : String(minioError)}`);
     }
-  }, [getProject]);
+
+    const mediaDocRef = doc(firestore, PROJECTS_COLLECTION, projectId, MEDIA_SUBCOLLECTION, mediaId);
+    await deleteDoc(mediaDocRef);
+
+    let newCurrentMediaIdForProject: string | null = projectRef.currentMediaId;
+    let requiresCurrentMediaUpdateInDb = false;
+
+    setProjects(prevProjects =>
+      prevProjects.map(p => {
+        if (p.id === projectId) {
+          const filteredMedia = p.media.filter(m => m.id !== mediaId);
+          const updatedMedia = filteredMedia
+                                     .sort((a, b) => a.order - b.order) 
+                                     .map((m, index) => ({ ...m, order: index })); 
+
+          if (p.currentMediaId === mediaId) { 
+            newCurrentMediaIdForProject = updatedMedia.length > 0 ? updatedMedia[0].id : null;
+            requiresCurrentMediaUpdateInDb = true;
+          }
+          return { ...p, media: updatedMedia, currentMediaId: newCurrentMediaIdForProject };
+        }
+        return p;
+      })
+    );
+
+    if (activeProjectForMenuId === projectId) {
+      setActiveProjectMedia(prevMedia => {
+        const filteredMedia = prevMedia.filter(m => m.id !== mediaId);
+        return filteredMedia
+            .sort((a,b) => a.order - b.order)
+            .map((m, index) => ({ ...m, order: index }));
+      });
+    }
+    
+    if (requiresCurrentMediaUpdateInDb) {
+      const projectDocFirestoreRef = doc(firestore, PROJECTS_COLLECTION, projectId);
+      updateDoc(projectDocFirestoreRef, { currentMediaId: newCurrentMediaIdForProject }).catch(err => {
+        console.error("Error updating currentMediaId in Firestore post-delete:", err);
+      });
+    }
+    
+    const projectDataForOrderUpdate = projects.find(p => p.id === projectId);
+    if (projectDataForOrderUpdate) {
+        const remainingMedia = projectDataForOrderUpdate.media.filter(m => m.id !== mediaId).sort((a,b) => a.order - b.order);
+        if (remainingMedia.some((m, i) => m.order !== i)) { 
+            const batch = writeBatch(firestore);
+            remainingMedia.forEach((item, index) => {
+                const itemDocRef = doc(firestore, PROJECTS_COLLECTION, projectId, MEDIA_SUBCOLLECTION, item.id);
+                batch.update(itemDocRef, { order: index });
+            });
+            await batch.commit().catch(err => console.error("Error batch updating media order in Firestore:", err));
+        }
+    }
+
+
+  }, [getProject, projects, activeProjectForMenuId]); 
   
   const deleteProject = useCallback(async (projectId: string): Promise<void> => {
-    const project = getProject(projectId);
-    if (!project) {
+    const project = getProject(projectId); // Uses local state first
+    
+    // If project not in local state (e.g. context hasn't updated yet, or direct call), try fetching
+    const projectToProcess = project || projects.find(p => p.id === projectId);
+
+    if (!projectToProcess) {
         console.warn(`Project with ID ${projectId} not found for deletion.`);
         return;
     }
 
     const batch = writeBatch(firestore);
     
-    const mediaCollectionRef = collection(firestore, PROJECTS_COLLECTION, projectId, MEDIA_SUBCOLLECTION);
-    const mediaSnapshot = await getDocs(mediaCollectionRef);
-
-    for (const mediaDoc of mediaSnapshot.docs) {
-        const mediaData = mediaDoc.data() as MediaFileDocumentData;
-        if (mediaData.storagePath && minioS3Client && MINIO_BUCKET_NAME) {
+    // Delete associated media from MinIO and Firestore subcollection
+    for (const mediaFile of projectToProcess.media) {
+        if (mediaFile.storagePath && minioS3Client && MINIO_BUCKET_NAME) {
             try {
                 const deleteCommand = new DeleteObjectCommand({
                     Bucket: MINIO_BUCKET_NAME,
-                    Key: mediaData.storagePath,
+                    Key: mediaFile.storagePath,
                 });
                 await minioS3Client.send(deleteCommand);
-                console.log(`Successfully deleted ${mediaData.storagePath} from MinIO during project deletion.`);
             } catch (storageError) {
-                console.error(`Error deleting ${mediaData.storagePath} from MinIO during project deletion:`, storageError);
+                console.error(`Error deleting ${mediaFile.storagePath} from MinIO:`, storageError);
+                // Consider if you want to throw or just log
             }
         }
-        batch.delete(mediaDoc.ref);
+        if (mediaFile.thumbnailStoragePath && minioS3Client && MINIO_BUCKET_NAME) {
+            try {
+                const deleteThumbnailCommand = new DeleteObjectCommand({
+                    Bucket: MINIO_BUCKET_NAME,
+                    Key: mediaFile.thumbnailStoragePath,
+                });
+                await minioS3Client.send(deleteThumbnailCommand);
+            } catch (storageError) {
+                console.error(`Error deleting thumbnail ${mediaFile.thumbnailStoragePath} from MinIO:`, storageError);
+            }
+        }
+        const mediaDocRef = doc(firestore, PROJECTS_COLLECTION, projectId, MEDIA_SUBCOLLECTION, mediaFile.id);
+        batch.delete(mediaDocRef);
+    }
+
+    // Delete project background from MinIO
+    if (projectToProcess.defaultDisplayBackgroundStoragePath && minioS3Client && MINIO_BUCKET_NAME) {
+        try {
+            const deleteBgCommand = new DeleteObjectCommand({
+                Bucket: MINIO_BUCKET_NAME,
+                Key: projectToProcess.defaultDisplayBackgroundStoragePath,
+            });
+            await minioS3Client.send(deleteBgCommand);
+        } catch (storageError) {
+            console.error(`Error deleting project background ${projectToProcess.defaultDisplayBackgroundStoragePath} from MinIO:`, storageError);
+        }
     }
     
+    // Delete project document from Firestore
     const projectDocRef = doc(firestore, PROJECTS_COLLECTION, projectId);
     batch.delete(projectDocRef);
 
     try {
         await batch.commit();
+        // Optimistically update local state
+        setProjects(prevProjects => prevProjects.filter(p => p.id !== projectId));
         if (activeProjectForMenuId === projectId) {
           setActiveProjectForMenuId(null);
+          setActiveProjectMedia([]);
         }
     } catch(error) {
         console.error("Error deleting project with batch from Firestore:", error);
-        throw error;
+        throw error; // Re-throw to allow UI to catch and display error
     }
-  }, [getProject, activeProjectForMenuId]);
+  }, [projects, getProject, activeProjectForMenuId]); // Added projects to dependency array for robustness
 
   const setCurrentMediaForProject = useCallback(async (
     projectId: string,
@@ -527,6 +638,60 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
     });
   }, []);
 
+  const updateProjectSettings = useCallback(
+    async (
+      projectId: string,
+      settings: {
+        name?: string;
+        defaultDisplayBackground?: string | null; 
+        defaultDisplayBackgroundStoragePath?: string | null; 
+      }
+    ): Promise<void> => {
+      const projectDocRef = doc(firestore, PROJECTS_COLLECTION, projectId);
+      const currentProject = getProject(projectId); 
+      const updates: Partial<ProjectDocumentData & { defaultDisplayBackgroundStoragePath?: string | null }> = {};
+  
+      if (settings.name && settings.name !== currentProject?.name) {
+        updates.name = settings.name;
+        updates.slug = generateSlug(settings.name);
+      }
+      
+      const newBackgroundUrl = settings.defaultDisplayBackground;
+      const newStoragePath = settings.defaultDisplayBackgroundStoragePath;
+      const oldStoragePath = currentProject?.defaultDisplayBackgroundStoragePath;
+  
+      if (newStoragePath !== undefined) { 
+        if (oldStoragePath && oldStoragePath !== newStoragePath) {
+          if (minioS3Client && MINIO_BUCKET_NAME) {
+            try {
+              const deleteCommand = new DeleteObjectCommand({
+                Bucket: MINIO_BUCKET_NAME,
+                Key: oldStoragePath,
+              });
+              await minioS3Client.send(deleteCommand);
+            } catch (error) {
+              console.error("Error deleting old project background from MinIO:", error);
+            }
+          }
+        }
+        updates.defaultDisplayBackground = newBackgroundUrl; 
+        updates.defaultDisplayBackgroundStoragePath = newStoragePath; 
+      }
+  
+      if (Object.keys(updates).length > 0) {
+        await updateDoc(projectDocRef, updates);
+        setProjects(prevProjects => prevProjects.map(p => {
+          if (p.id === projectId) {
+            return { ...p, ...updates, createdAt: new Date(p.createdAt) }; 
+          }
+          return p;
+        }));
+      }
+    },
+    [getProject, projects]  // Added projects to dependency list
+  );
+
+
   const getAllInstanceDisplayStates = useCallback(async (): Promise<
     Record<string, InstanceDisplayState>
   > => {
@@ -557,10 +722,63 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const deleteInstanceDisplayStateFromAdmin = useCallback(async (pin: string): Promise<void> => {
+    const projectsToDelete = projects.filter(p => p.instancePin === pin);
+    
+    for (const project of projectsToDelete) {
+      try {
+        await deleteProject(project.id); 
+      } catch (error) {
+        console.error(`Failed to delete project ${project.id} (PIN: ${pin}) during instance state deletion:`, error);
+        // Decide if you want to throw an error here to stop the process or just log and continue
+      }
+    }
+    
     const instanceDocRef = doc(firestore, INSTANCE_DISPLAY_STATE_COLLECTION, pin);
-    await deleteDoc(instanceDocRef);
-  }, []);
+    try {
+        await deleteDoc(instanceDocRef);
+    } catch (error) {
+        console.error(`Failed to delete instance state document for PIN ${pin}:`, error);
+        throw error; // Re-throw if deleting the instance state doc itself fails
+    }
+  }, [projects, deleteProject]);
   
+  const updateMediaOrder = useCallback(async (projectId: string, orderedMedia: MediaFile[]): Promise<void> => {
+    const batch = writeBatch(firestore);
+    const projectDocRef = doc(firestore, PROJECTS_COLLECTION, projectId);
+    const mediaCollectionRef = collection(projectDocRef, MEDIA_SUBCOLLECTION);
+
+    orderedMedia.forEach((mediaItem, index) => {
+      const mediaDocRef = doc(mediaCollectionRef, mediaItem.id);
+      batch.update(mediaDocRef, { order: index });
+    });
+
+    try {
+      await batch.commit();
+      setProjects(prevProjects => prevProjects.map(p => {
+        if (p.id === projectId) {
+          const orderMap = new Map(orderedMedia.map(m => [m.id, m.order]));
+          const newMedia = p.media
+            .map(m => ({ ...m, order: orderMap.get(m.id) ?? m.order })) 
+            .sort((a, b) => a.order - b.order); 
+          return { ...p, media: newMedia };
+        }
+        return p;
+      }));
+      if(activeProjectForMenuId === projectId) {
+        setActiveProjectMedia(prevMedia => {
+            const orderMap = new Map(orderedMedia.map(m => [m.id, m.order]));
+            return prevMedia
+                .map(m => ({...m, order: orderMap.get(m.id) ?? m.order}))
+                .sort((a,b) => a.order - b.order);
+        });
+      }
+
+    } catch (error) {
+      console.error("Error updating media order in Firestore:", error);
+      throw error;
+    }
+  }, [activeProjectForMenuId, projects]); // Added projects to dependency list
+
   const activeProjectForMenu = projects.find((p) => p.id === activeProjectForMenuId) || null;
 
   return (
@@ -569,7 +787,7 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
         projects,
         instanceProjects,
         activeProjectForMenu,
-        activeProjectMedia, // Added active project media to context value
+        activeProjectMedia,
         instancePin,
         isLoading,
         isUserAdmin,
@@ -587,9 +805,11 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
         listenToInstanceDisplayState,
         createInstanceDisplayStateIfNeeded,
         updateProjectName,
+        updateProjectSettings,
         getAllInstanceDisplayStates,
         clearInstanceDisplayState,
         deleteInstanceDisplayStateFromAdmin,
+        updateMediaOrder,
       }}
     >
       {children}
@@ -604,3 +824,5 @@ export const useProjects = (): ProjectContextType => {
   }
   return context;
 };
+
+    

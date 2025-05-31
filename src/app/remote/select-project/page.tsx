@@ -1,3 +1,4 @@
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -8,33 +9,46 @@ import { Button } from "@/components/ui/button";
 import { Smartphone, ArrowRight, FolderOpen, LogIn } from "lucide-react";
 import { PinEntryForm } from "@/components/PinEntryForm";
 import { useToast } from "@/hooks/use-toast";
-import { useRouter } from "next/navigation"; // Import useRouter
-import { toast } from "@/hooks/use-toast";
+import { useRouter, useSearchParams } from "next/navigation"; 
 
 export default function SelectProjectForRemotePage() {
   const { 
     projects, 
     isLoading, 
     setActiveProjectForMenu,
+    // Removed: listenToInstanceDisplayState - not used on this page directly for PIN verification
+    // Removed: getProject - not used here for PIN verification logic
+    // Removed: instanceProjects - projects are filtered directly from 'projects'
   } = useProjects();
-  const router = useRouter(); // Initialize useRouter
-  const { toast } = useToast(); // Get toast function from the hook
+  const router = useRouter(); 
+  const searchParams = useSearchParams();
+  const { toast } = useToast(); 
   const [pinErrorMessage, setPinErrorMessage] = useState<string | null>(null);
-  const [isVerifyingPin, setIsVerifyingPin] = useState(false); // Renamed for clarity
-  const [targetInstancePin, setTargetInstancePin] = useState<string | null>(null); // Store validated PIN
+  const [isVerifyingPin, setIsVerifyingPin] = useState(false); 
+  
+  // Use targetInstancePin from URL query param if present, otherwise null
+  const initialPinFromQuery = searchParams.get("instancePin");
+  const [targetInstancePin, setTargetInstancePin] = useState<string | null>(initialPinFromQuery); 
 
   useEffect(() => {
     setActiveProjectForMenu(null); 
   }, [setActiveProjectForMenu]);
 
+  // If initialPinFromQuery changes (e.g. user navigates with a new ?instancePin=), update state
+  useEffect(() => {
+    setTargetInstancePin(initialPinFromQuery);
+  }, [initialPinFromQuery]);
+
+
   const handlePinSubmit = (pin: string) => {
     setIsVerifyingPin(true);
     setPinErrorMessage(null);
-    // For now, we assume the PIN is for a valid, listening display instance.
-    // Actual validation would require checking Firebase or a similar mechanism.
-    // Here, we'll just accept it and let the remote page try to use it.
+    
+    // Basic validation (should ideally also check if instance exists, but that requires async)
     if (pin && pin.length === 6 && /^\d{6}$/.test(pin)) {
       setTargetInstancePin(pin);
+      // Update URL to reflect the entered PIN without full navigation if desired
+      router.replace(`/remote/select-project?instancePin=${pin}`);
       toast({
         title: "Instance PIN Accepted",
         description: "You can now select a project to control for this display instance.",
@@ -51,15 +65,17 @@ export default function SelectProjectForRemotePage() {
   };
 
   const handleLockRemote = () => {
-    setTargetInstancePin(null); // Clear the entered PIN
+    setTargetInstancePin(null); 
     setPinErrorMessage(null);
+    // Clear instancePin from URL
+    router.replace('/remote/select-project');
     toast({
-      title: "Remote Locked",
+      title: "Remote Unlinked",
       description: "Enter a Display's Instance PIN to connect again.",
     });
   };
 
-  if (isLoading && projects.length === 0) { // Adjusted loading condition
+  if (isLoading && projects.length === 0 && !targetInstancePin) { 
      return (
       <div className="flex flex-col items-center justify-center h-screen">
         <div className="text-center">
@@ -72,7 +88,7 @@ export default function SelectProjectForRemotePage() {
 
   if (!targetInstancePin) {
     return (
-      <div className="container mx-auto py-12 px-4 md:px-6 flex flex-col items-center justify-center min-h-[calc(100vh-10rem)]">
+      <div className="container mx-auto flex flex-1 flex-col items-center justify-center py-12">
         <PinEntryForm 
           onSubmitPin={handlePinSubmit} 
           isLoading={isVerifyingPin}
@@ -80,12 +96,15 @@ export default function SelectProjectForRemotePage() {
         />
          {projects.length === 0 && !isLoading && ( 
             <p className="mt-6 text-center text-muted-foreground">
-                No projects found. Please <Link href="/?create=true" className="underline hover:text-primary">create a project</Link> first.
+                No projects found. Please <Link href="/projects-overview?create=true" className="underline hover:text-primary">create a project</Link> first.
             </p>
         )}
       </div>
     );
   }
+
+  // Filter projects that belong to the targetInstancePin
+  const projectsForThisInstance = projects.filter(p => p.instancePin === targetInstancePin);
 
   return (
     <div className="container mx-auto py-12 px-4 md:px-6">
@@ -106,21 +125,20 @@ export default function SelectProjectForRemotePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="p-6">
-          {projects.length === 0 ? (
+          {projectsForThisInstance.length === 0 ? (
             <div className="text-center py-6 text-muted-foreground">
                 <FolderOpen className="mx-auto h-12 w-12 mb-4 opacity-50" />
-                <p className="text-lg mb-1">No Projects Found</p>
-                <p>Please create a project first to be able to use the remote control.</p>
+                <p className="text-lg mb-1">No Projects Found for PIN {targetInstancePin}</p>
+                <p className="text-sm">Ensure projects exist for this PIN or check if the PIN is correct.</p>
                  <Button asChild className="mt-4">
-                    <Link href="/?create=true">Create New Project</Link>
+                    <Link href="/projects-overview?create=true">Create New Project</Link>
                 </Button>
             </div>
           ) : (
             <ul className="space-y-3">
-              {projects.map((project) => (
+              {projectsForThisInstance.map((project) => (
                 <li key={project.id}>
                   <Button variant="outline" size="lg" className="w-full justify-between py-6 text-lg" asChild>
-                    {/* Pass targetInstancePin as a query parameter */}
                     <Link href={`/remote/${project.id}?instancePin=${targetInstancePin}`}>
                       <span>{project.name}</span>
                        <div className="flex items-center">

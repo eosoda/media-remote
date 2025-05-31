@@ -3,12 +3,13 @@
 
 import type { Project } from "@/types";
 import { useProjects } from "@/contexts/ProjectContext";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card"; // Removed CardHeader, CardTitle, CardDescription
 import { Folder, Loader2 } from "lucide-react"; 
 import { ScrollArea } from "./ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useCallback } from "react";
-import { ProjectItemCard } from "./ProjectItemCard"; // Import the new component
+import { ProjectItemCard } from "./ProjectItemCard";
+import { ProjectSettingsModal } from "./ProjectSettingsModal"; // Import the modal
 
 interface ProjectListProps {
   projectsToDisplay: Project[]; 
@@ -19,17 +20,7 @@ export function ProjectList({ projectsToDisplay, listContext = "instance" }: Pro
   const { isLoading, deleteProject, setActiveProjectForMenu, instancePin } = useProjects();
   const { toast } = useToast();
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null);
-
-  let cardTitle = "Projects";
-  let cardDescription = "Manage your media projects.";
-
-  if (listContext === "instance") {
-    cardTitle = "Projects for This Instance";
-    cardDescription = `Listing projects associated with this device (PIN: ${instancePin || "..."}).`;
-  } else if (listContext === "admin") {
-    cardTitle = "All Projects (Admin View)";
-    cardDescription = "Manage all projects across all instances.";
-  }
+  const [editingProject, setEditingProject] = useState<Project | null>(null); // State for modal
 
   const handleDeleteProject = useCallback(async (projectId: string, projectName: string) => {
     setDeletingProjectId(projectId);
@@ -50,13 +41,18 @@ export function ProjectList({ projectsToDisplay, listContext = "instance" }: Pro
     }
   }, [deleteProject, toast]);
 
+  const handleOpenSettingsModal = (project: Project) => {
+    setEditingProject(project);
+  };
+
+  const handleCloseSettingsModal = () => {
+    setEditingProject(null);
+  };
+
   if (isLoading && listContext !== 'remote' && projectsToDisplay.length === 0) { 
     return (
       <Card>
-        <CardHeader>
-          <CardTitle>{cardTitle}</CardTitle>
-          <CardDescription>{cardDescription}</CardDescription>
-        </CardHeader>
+        {/* CardHeader removed */}
         <CardContent className="flex items-center justify-center py-10">
           <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
           <p>Loading projects...</p>
@@ -68,51 +64,53 @@ export function ProjectList({ projectsToDisplay, listContext = "instance" }: Pro
   if (projectsToDisplay.length === 0) {
     return (
       <Card className="text-center">
-        <CardHeader>
-          <CardTitle>No Projects Found</CardTitle>
-          <CardDescription>
+        {/* CardHeader removed */}
+        <CardContent className="py-10">
+          <Folder className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+           <p className="text-lg mb-2">No Projects Found</p>
+          <p className="text-sm text-muted-foreground">
             {listContext === "instance" 
-              ? `No projects found for this device instance (PIN: ${instancePin || "..."}). Use the form to create one.`
+              ? `No projects found for this device instance (PIN: ${instancePin || "..."}). Create one to get started.`
               : listContext === "admin" 
                 ? "There are no projects in the system yet."
                 : "No projects available for the selected PIN."
             }
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="py-10">
-          <Folder className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          {listContext === "instance" && (
-             <p className="text-sm text-muted-foreground">
-                Use the "Create New Project" form to begin.
-             </p>
-          )}
+          </p>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{cardTitle}</CardTitle>
-        <CardDescription>{cardDescription}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-[calc(100vh-220px)] md:h-[calc(100vh-320px)] pr-4">
-          <div className="space-y-4">
-            {projectsToDisplay.map((project) => (
-              <ProjectItemCard
-                key={project.id}
-                project={project}
-                listContext={listContext}
-                onDeleteProject={handleDeleteProject}
-                setActiveProjectForMenu={setActiveProjectForMenu}
-                isDeletingThisProject={deletingProjectId === project.id}
-              />
-            ))}
-          </div>
-        </ScrollArea>
-      </CardContent>
-    </Card>
+    <>
+      <Card>
+        {/* CardHeader removed */}
+        <CardContent className="pt-4"> {/* Adjusted padding-top since header is removed */}
+          <ScrollArea className="h-[calc(100vh-220px)] md:h-[calc(100vh-250px)] pr-4"> {/* Adjusted height calculation */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {projectsToDisplay.map((project) => (
+                <ProjectItemCard
+                  key={project.id}
+                  project={project}
+                  listContext={listContext}
+                  onDeleteProject={handleDeleteProject}
+                  setActiveProjectForMenu={setActiveProjectForMenu}
+                  isDeletingThisProject={deletingProjectId === project.id}
+                  onOpenSettings={handleOpenSettingsModal} // Pass handler to card
+                />
+              ))}
+            </div>
+          </ScrollArea>
+        </CardContent>
+      </Card>
+
+      {editingProject && (
+        <ProjectSettingsModal
+          project={editingProject}
+          isOpen={!!editingProject}
+          onClose={handleCloseSettingsModal}
+        />
+      )}
+    </>
   );
 }

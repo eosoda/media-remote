@@ -12,27 +12,34 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { useProjects } from "@/contexts/ProjectContext";
-import { FolderKanban, Loader2 } from "lucide-react";
+import { FolderKanban, Loader2, PlusCircle } from "lucide-react";
 
 function ProjectsOverviewContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { instancePin, isLoading: projectsContextLoading, instanceProjects } = useProjects();
+  const { instancePin, isLoading: projectsContextLoading, instanceProjects, setActiveProjectForMenu } = useProjects();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   useEffect(() => {
+    setActiveProjectForMenu(null); // Clear active project for menu on this page
+    document.title = "My Projects - Media Remote";
     if (searchParams.get("create") === "true") {
       setShowCreateDialog(true);
     }
-  }, [searchParams]);
+  }, [searchParams, setActiveProjectForMenu]);
 
   const handleProjectCreated = (projectId: string) => {
     setShowCreateDialog(false);
-    // Clear the "create=true" query param
+    // Clear the "create=true" query param if it was set
     const newPath = window.location.pathname;
-    window.history.replaceState({...window.history.state, as: newPath, url: newPath }, '', newPath);
-    router.push(`/projects/${projectId}`);
+    const params = new URLSearchParams(window.location.search);
+    params.delete('create');
+    const search = params.toString();
+    const finalPath = search ? `${newPath}?${search}` : newPath;
+    window.history.replaceState({...window.history.state, as: finalPath, url: finalPath }, '', finalPath);
+    // router.push(`/projects/${projectId}`); // Removed this line to prevent redirection
   }
 
   const handleDialogClose = () => {
@@ -47,34 +54,31 @@ function ProjectsOverviewContent() {
   }
 
   return (
-    <div className="container mx-auto py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight flex items-center">
-          <FolderKanban className="mr-3 h-8 w-8 text-primary" />
-          My Projects
-        </h1>
-        <p className="text-muted-foreground">
-          Manage projects for this device instance (PIN: <span className="font-semibold">{instancePin || "Loading..."}</span>).
-        </p>
+    <div className="space-y-8"> 
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center">
+            <FolderKanban className="mr-3 h-8 w-8 text-primary" />
+            My Projects
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Manage projects for this device instance (PIN: <span className="font-semibold">{instancePin || "Loading..."}</span>).
+          </p>
+        </div>
+        <Button onClick={() => setShowCreateDialog(true)} className="w-full sm:w-auto">
+          <PlusCircle className="mr-2 h-5 w-5" /> Create New Project
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        <div className="lg:col-span-1 order-2 lg:order-1 space-y-6">
-            <CreateProjectForm
-              onProjectCreated={(id) => router.push(`/projects/${id}`)}
-              className="sticky top-6"
-            />
-        </div>
-        <div className="lg:col-span-2 order-1 lg:order-2">
-          {projectsContextLoading && !instancePin ? (
-              <div className="flex items-center justify-center py-10">
-                <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
-                <p>Loading projects and instance PIN...</p>
-              </div>
-          ) : (
-            <ProjectList projectsToDisplay={instanceProjects} listContext="instance" />
-          )}
-        </div>
+      <div>
+        {projectsContextLoading && !instancePin ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="mr-2 h-8 w-8 animate-spin text-primary" />
+              <p>Loading projects and instance PIN...</p>
+            </div>
+        ) : (
+          <ProjectList projectsToDisplay={instanceProjects} listContext="instance" />
+        )}
       </div>
 
       <Dialog open={showCreateDialog} onOpenChange={(open) => {
@@ -88,8 +92,7 @@ function ProjectsOverviewContent() {
           <DialogHeader>
             <DialogTitle>Create New Project</DialogTitle>
             <DialogDescription>
-              Enter a name for your new project. Click create when you're done.
-              It will be associated with this device (PIN: {instancePin || "..."}).
+              Enter a name for your new project. Projects are linked to this device instance (PIN: {instancePin || "..."}).
             </DialogDescription>
           </DialogHeader>
           <CreateProjectForm onProjectCreated={handleProjectCreated} />
@@ -100,12 +103,6 @@ function ProjectsOverviewContent() {
 }
 
 export default function ProjectsOverviewPage() {
-  const { setActiveProjectForMenu } = useProjects();
-
-  useEffect(() => {
-    setActiveProjectForMenu(null);
-  }, [setActiveProjectForMenu]);
-
   return (
     <Suspense fallback={
       <div className="flex h-full flex-1 items-center justify-center py-10">
@@ -117,3 +114,4 @@ export default function ProjectsOverviewPage() {
     </Suspense>
   );
 }
+

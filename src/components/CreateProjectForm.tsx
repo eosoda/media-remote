@@ -16,10 +16,10 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useProjects } from "@/contexts/ProjectContext";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
-import { PlusCircle, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 const projectFormSchema = z.object({
   name: z.string().min(1, "Project name is required").max(50, "Project name is too long"),
@@ -33,7 +33,7 @@ interface CreateProjectFormProps {
 }
 
 export function CreateProjectForm({ onProjectCreated, className }: CreateProjectFormProps) {
-  const { addProject, instancePin: currentInstancePin, getOrCreateInstancePin } = useProjects(); 
+  const { addProject, instancePin: currentInstancePin, getOrCreateInstancePin } = useProjects();
   const router = useRouter();
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -47,9 +47,8 @@ export function CreateProjectForm({ onProjectCreated, className }: CreateProject
   });
 
   useEffect(() => {
-    // Ensure PIN is available when component mounts or currentInstancePin changes
     if (!currentInstancePin) {
-      const pin = getOrCreateInstancePin(); // This might trigger a state update in context
+      const pin = getOrCreateInstancePin();
       setEffectiveInstancePin(pin);
     } else {
       setEffectiveInstancePin(currentInstancePin);
@@ -69,6 +68,7 @@ export function CreateProjectForm({ onProjectCreated, className }: CreateProject
     }
 
     try {
+      // Removed defaultDisplayBackground from here
       const newProject = await addProject(data.name, effectiveInstancePin);
       if (newProject) {
         toast({
@@ -79,7 +79,6 @@ export function CreateProjectForm({ onProjectCreated, className }: CreateProject
         if (onProjectCreated) {
           onProjectCreated(newProject.id);
         } else {
-          // If used standalone, navigate to the new project's page
           router.push(`/projects/${newProject.id}`);
         }
       } else {
@@ -98,14 +97,7 @@ export function CreateProjectForm({ onProjectCreated, className }: CreateProject
 
   return (
     <Card className={className}>
-      <CardHeader>
-        <CardTitle className="flex items-center"><PlusCircle className="mr-2 h-6 w-6 text-primary" /> Create New Project</CardTitle>
-        <CardDescription>
-          Enter a name for your new project. It will be associated with this device instance 
-          (PIN: <span className="font-semibold">{effectiveInstancePin || "loading..."}</span>).
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+      <CardContent className="pt-6">
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <FormField
@@ -115,10 +107,10 @@ export function CreateProjectForm({ onProjectCreated, className }: CreateProject
                 <FormItem>
                   <FormLabel>Project Name</FormLabel>
                   <FormControl>
-                    <Input 
-                      placeholder="e.g., Summer Vacation Slideshow" 
-                      {...field} 
-                      disabled={isSubmitting || !effectiveInstancePin} 
+                    <Input
+                      placeholder="e.g., Summer Vacation Slideshow"
+                      {...field}
+                      disabled={isSubmitting || !effectiveInstancePin}
                     />
                   </FormControl>
                   <FormMessage />

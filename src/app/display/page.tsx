@@ -8,8 +8,6 @@ import type { MediaFile, InstanceDisplayState } from "@/types";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowLeft, Tv2, ShieldAlert, Loader2, WifiOff } from "lucide-react";
-import type { Metadata } from 'next';
-
 import { useAutoHide } from '@/hooks/useAutoHide';
 
 export default function GenericDisplayPage() {
@@ -19,7 +17,7 @@ export default function GenericDisplayPage() {
     listenToInstanceDisplayState,
     setActiveProjectForMenu,
     getProject,
-    activeProjectMedia, // Import activeProjectMedia from context
+    activeProjectMedia,
   } = useProjects();
 
   const [ownInstancePin, setOwnInstancePin] = useState<string | null>(null);
@@ -34,6 +32,7 @@ export default function GenericDisplayPage() {
     const pin = getOrCreateInstancePin();
     setOwnInstancePin(pin);
     setIsLoadingPin(false);
+    document.title = `Display PIN: ${pin} - Media Remote`;
   }, [getOrCreateInstancePin]);
 
   useEffect(() => {
@@ -53,12 +52,10 @@ export default function GenericDisplayPage() {
     return () => unsubscribe();
   }, [ownInstancePin, listenToInstanceDisplayState, setActiveProjectForMenu]);
 
-  // Set the active project in context based on the instance display data
   useEffect(() => {
     if (instanceDisplayData?.currentProjectId) {
       setActiveProjectForMenu(instanceDisplayData.currentProjectId);
     }
-    // Optional: setActiveProjectForMenu(null) could be added here if you want to clear the active project when no project is linked to the instance
   }, [instanceDisplayData?.currentProjectId, setActiveProjectForMenu]);
 
   const currentProject = useMemo(() => {
@@ -67,25 +64,28 @@ export default function GenericDisplayPage() {
   }, [projectsLoading, instanceDisplayData, getProject]);
   
   useEffect(() => {
-    // Use activeProjectMedia from the context which is updated by the real-time listener
     if (activeProjectMedia && instanceDisplayData?.currentMediaId) {
       const mediaToDisplay =
         activeProjectMedia.find(m => m.id === instanceDisplayData.currentMediaId) ||
-        activeProjectMedia[0] || // Fallback to the first media if currentMediaId is not found
+        activeProjectMedia[0] || 
         null;
       setCurrentMedia(mediaToDisplay);
     } else if (instanceDisplayData && !instanceDisplayData.currentProjectId) {
-      // No project linked to the instance, clear current media
       setCurrentMedia(null);
     } else if (!instanceDisplayData?.currentMediaId && activeProjectMedia) {
-       // A project is active in context (has activeProjectMedia) but no specific media is set in instance data,
-       // default to the first media in the active project's list.
       setCurrentMedia(activeProjectMedia[0] || null);
     }
      else {
       setCurrentMedia(null);
     }
-  }, [activeProjectMedia, instanceDisplayData]); // Depend on activeProjectMedia and instanceDisplayData
+
+    if (currentProject) {
+        document.title = `Display: ${currentProject.name} (PIN: ${ownInstancePin}) - Media Remote`;
+    } else if (ownInstancePin) {
+        document.title = `Display PIN: ${ownInstancePin} - Media Remote`;
+    }
+
+  }, [activeProjectMedia, instanceDisplayData, currentProject, ownInstancePin]);
 
 
   if (isLoadingPin || (projectsLoading && !currentProject && instanceDisplayData?.currentProjectId)) {
@@ -117,7 +117,12 @@ export default function GenericDisplayPage() {
   if (currentProject && ownInstancePin) {
     return (
       <div className={`fixed inset-0 bg-black z-50 ${!controlsVisible ? 'hide-cursor' : ''}`}>
-        <MediaDisplayComponent media={currentMedia} projectName={currentProject.name} controlsVisible={controlsVisible} />
+        <MediaDisplayComponent 
+            media={currentMedia} 
+            projectName={currentProject.name} 
+            controlsVisible={controlsVisible}
+            defaultDisplayBackground={currentProject.defaultDisplayBackground}
+        />
         <div 
           className={`absolute top-2 left-2 bg-black/50 text-white p-2 rounded-md text-xs transition-opacity duration-300 ${controlsVisible ? 'opacity-70 hover:opacity-100' : 'opacity-0 pointer-events-none'}`}
         >
@@ -135,7 +140,6 @@ export default function GenericDisplayPage() {
       </div>
     );
   } else {
-    // Placeholder screens (Display Ready / Project Not Found / etc.)
     return (
       <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-muted text-muted-foreground p-8 text-center">
         {instanceDisplayData?.currentProjectId && !currentProject && !projectsLoading ? (
