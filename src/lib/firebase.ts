@@ -1,8 +1,7 @@
+
 // src/lib/firebase.ts
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getFirestore, type Firestore } from "firebase/firestore";
-// Removed: import { getStorage, type FirebaseStorage } from "firebase/storage";
-
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -21,12 +20,10 @@ if (!firebaseConfig.apiKey) {
 
 // Check for placeholder or undefined Project ID
 if (!firebaseConfig.projectId || firebaseConfig.projectId === "your_project_id") {
-
   console.error(
     "Firebase Configuration Error: NEXT_PUBLIC_FIREBASE_PROJECT_ID is not defined or is a placeholder. This is a required field for Firestore. Please set it in your .env.local file with your actual Firebase Project ID."
   );
 }
-
 
 // Validate databaseURL format if it exists, but don't throw if it's not set (since we use Firestore)
 if (firebaseConfig.databaseURL && firebaseConfig.databaseURL !== "your_database_url") {
@@ -42,14 +39,12 @@ if (firebaseConfig.databaseURL && firebaseConfig.databaseURL !== "your_database_
     console.error(
       `Firebase Configuration Error: The provided NEXT_PUBLIC_FIREBASE_DATABASE_URL ("${firebaseConfig.databaseURL}") is not a valid URL. Please check its value in your .env.local file or remove it if Realtime Database is not used.`
     );
- }
+  }
 }
-
 
 // Initialize Firebase App
 const _app: FirebaseApp = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// Initialize and export Firestore and Storage services
+// Initialize and export Firestore service
 export const firestore: Firestore = getFirestore(_app);
-// Removed: export const storage: FirebaseStorage = getStorage(_app);
 export const app = _app; // Export the app instance itself
