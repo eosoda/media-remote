@@ -19,7 +19,7 @@
     --muted-foreground: 50.0000 2.3622% 50.1961%;
     --accent: 46.1538 22.8070% 88.8235%;
     --accent-foreground: 50.7692 19.4030% 13.1373%;
-    --destructive: 60 2.5641% 7.6471%;
+    --destructive: 0 84.2365% 60.1961%; /* Updated to red for light mode */
     --destructive-foreground: 0 0% 100%;
     --border: 50 7.5000% 84.3137%;
     --input: 50.7692 7.9755% 68.0392%;
@@ -134,4 +134,5 @@
 
     
     
+
 

@@ -233,7 +233,7 @@ const MediaItemCardComponent = React.forwardRef<HTMLDivElement, MediaItemCardPro
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <DropdownMenuItem
-                        className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                        className="text-destructive focus:bg-destructive/10 focus:text-destructive data-[highlighted]:bg-destructive/10 data-[highlighted]:text-destructive"
                         onSelect={(e) => {
                             e.preventDefault(); // Important: Prevents DropdownMenu from closing before AlertDialog opens
                         }}

@@ -27,14 +27,11 @@ export default function ProjectSpecificDisplayPage() {
       setActiveProjectForMenu(project.id);
       const mediaToDisplay = 
         project.media.find(m => m.id === project.currentMediaId) || 
-        project.media[0] || 
-        null;
+        null; // Changed: Do not default to project.media[0]
       setCurrentMedia(mediaToDisplay);
-      // Set document title only after project is confirmed
       document.title = `Display: ${project.name} - Media Remote`;
     } else {
       setCurrentMedia(null);
-      // Set document title for not found case
       document.title = "Display: Project Not Found - Media Remote";
     }
   }, [project, isLoading, setActiveProjectForMenu, projectId]);

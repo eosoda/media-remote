@@ -474,9 +474,7 @@ const deleteMedia = useCallback(async (
   }, [getProject, projects, activeProjectForMenuId]); 
   
   const deleteProject = useCallback(async (projectId: string): Promise<void> => {
-    const project = getProject(projectId); // Uses local state first
-    
-    // If project not in local state (e.g. context hasn't updated yet, or direct call), try fetching
+    const project = getProject(projectId); 
     const projectToProcess = project || projects.find(p => p.id === projectId);
 
     if (!projectToProcess) {
@@ -486,7 +484,6 @@ const deleteMedia = useCallback(async (
 
     const batch = writeBatch(firestore);
     
-    // Delete associated media from MinIO and Firestore subcollection
     for (const mediaFile of projectToProcess.media) {
         if (mediaFile.storagePath && minioS3Client && MINIO_BUCKET_NAME) {
             try {
@@ -497,7 +494,6 @@ const deleteMedia = useCallback(async (
                 await minioS3Client.send(deleteCommand);
             } catch (storageError) {
                 console.error(`Error deleting ${mediaFile.storagePath} from MinIO:`, storageError);
-                // Consider if you want to throw or just log
             }
         }
         if (mediaFile.thumbnailStoragePath && minioS3Client && MINIO_BUCKET_NAME) {
@@ -515,7 +511,6 @@ const deleteMedia = useCallback(async (
         batch.delete(mediaDocRef);
     }
 
-    // Delete project background from MinIO
     if (projectToProcess.defaultDisplayBackgroundStoragePath && minioS3Client && MINIO_BUCKET_NAME) {
         try {
             const deleteBgCommand = new DeleteObjectCommand({
@@ -528,13 +523,11 @@ const deleteMedia = useCallback(async (
         }
     }
     
-    // Delete project document from Firestore
     const projectDocRef = doc(firestore, PROJECTS_COLLECTION, projectId);
     batch.delete(projectDocRef);
 
     try {
         await batch.commit();
-        // Optimistically update local state
         setProjects(prevProjects => prevProjects.filter(p => p.id !== projectId));
         if (activeProjectForMenuId === projectId) {
           setActiveProjectForMenuId(null);
@@ -542,17 +535,36 @@ const deleteMedia = useCallback(async (
         }
     } catch(error) {
         console.error("Error deleting project with batch from Firestore:", error);
-        throw error; // Re-throw to allow UI to catch and display error
+        throw error; 
     }
-  }, [projects, getProject, activeProjectForMenuId]); // Added projects to dependency array for robustness
+  }, [projects, getProject, activeProjectForMenuId]); 
 
   const setCurrentMediaForProject = useCallback(async (
     projectId: string,
     mediaId: string | null
   ): Promise<void> => {
+    // 1. Update the project document itself
     const projectDocRef = doc(firestore, PROJECTS_COLLECTION, projectId);
     await updateDoc(projectDocRef, { currentMediaId: mediaId });
-  }, []);
+
+    // 2. Also update the instanceDisplayState for the project's own instancePin
+    const project = projects.find(p => p.id === projectId);
+    if (project && project.instancePin) {
+      const instanceStateDocRef = doc(
+        firestore,
+        INSTANCE_DISPLAY_STATE_COLLECTION,
+        project.instancePin
+      );
+      const stateToSet: InstanceDisplayState = {
+        currentProjectId: projectId,
+        currentMediaId: mediaId,
+        lastSeen: Timestamp.now().toMillis(),
+      };
+      await setDoc(instanceStateDocRef, stateToSet, { merge: true });
+    } else {
+      console.warn(`Project or instancePin not found for projectId: ${projectId} when trying to sync instance display state in setCurrentMediaForProject.`);
+    }
+  }, [projects]);
 
   const setActiveProjectForMenu = useCallback((projectId: string | null): void => {
     setActiveProjectForMenuId(projectId);
@@ -563,6 +575,7 @@ const deleteMedia = useCallback(async (
     projectId: string,
     mediaId: string | null
   ): Promise<void> => {
+    // 1. Update the target instanceDisplayState document
     const instanceStateDocRef = doc(
       firestore,
       INSTANCE_DISPLAY_STATE_COLLECTION,
@@ -574,7 +587,13 @@ const deleteMedia = useCallback(async (
       lastSeen: Timestamp.now().toMillis(),
     };
     await setDoc(instanceStateDocRef, stateToSet, { merge: true });
-  }, []);
+
+    // 2. ALSO ensure the project's own currentMediaId and its native instanceDisplayState are updated.
+    //    setCurrentMediaForProject now handles both of these aspects.
+    if (projectId) { 
+        await setCurrentMediaForProject(projectId, mediaId);
+    }
+  }, [setCurrentMediaForProject]);
 
   const listenToInstanceDisplayState = useCallback((
     instancePinToListen: string,
@@ -688,7 +707,7 @@ const deleteMedia = useCallback(async (
         }));
       }
     },
-    [getProject, projects]  // Added projects to dependency list
+    [getProject, projects]
   );
 
 
@@ -729,7 +748,6 @@ const deleteMedia = useCallback(async (
         await deleteProject(project.id); 
       } catch (error) {
         console.error(`Failed to delete project ${project.id} (PIN: ${pin}) during instance state deletion:`, error);
-        // Decide if you want to throw an error here to stop the process or just log and continue
       }
     }
     
@@ -738,7 +756,7 @@ const deleteMedia = useCallback(async (
         await deleteDoc(instanceDocRef);
     } catch (error) {
         console.error(`Failed to delete instance state document for PIN ${pin}:`, error);
-        throw error; // Re-throw if deleting the instance state doc itself fails
+        throw error; 
     }
   }, [projects, deleteProject]);
   
@@ -777,7 +795,7 @@ const deleteMedia = useCallback(async (
       console.error("Error updating media order in Firestore:", error);
       throw error;
     }
-  }, [activeProjectForMenuId, projects]); // Added projects to dependency list
+  }, [activeProjectForMenuId, projects]); 
 
   const activeProjectForMenu = projects.find((p) => p.id === activeProjectForMenuId) || null;
 

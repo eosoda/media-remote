@@ -67,13 +67,12 @@ export default function GenericDisplayPage() {
     if (activeProjectMedia && instanceDisplayData?.currentMediaId) {
       const mediaToDisplay =
         activeProjectMedia.find(m => m.id === instanceDisplayData.currentMediaId) ||
-        activeProjectMedia[0] || 
-        null;
+        null; // Changed: Do not default to activeProjectMedia[0]
       setCurrentMedia(mediaToDisplay);
     } else if (instanceDisplayData && !instanceDisplayData.currentProjectId) {
       setCurrentMedia(null);
     } else if (!instanceDisplayData?.currentMediaId && activeProjectMedia) {
-      setCurrentMedia(activeProjectMedia[0] || null);
+      setCurrentMedia(null); // Changed: Do not default to activeProjectMedia[0]
     }
      else {
       setCurrentMedia(null);
