@@ -6,13 +6,12 @@ import type { InstanceDisplayState, Project } from "@/types";
 import { useProjects } from "@/contexts/ProjectContext";
 import { Button } from "@/components/ui/button";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,10 +21,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Trash2, RadioTower, AlertTriangle, ArrowUp, ArrowDown, Folder } from "lucide-react";
+import { Loader2, Trash2, RadioTower, AlertTriangle, Folder } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from 'date-fns';
 
@@ -50,17 +48,22 @@ export function AdminInstanceTable() {
   const [instanceToConfirmDelete, setInstanceToConfirmDelete] = useState<EnrichedInstanceDisplayState | null>(null);
   const [associatedProjectsForSingleDelete, setAssociatedProjectsForSingleDelete] = useState<Project[]>([]);
 
-
   const [showDeleteOldDialog, setShowDeleteOldDialog] = useState(false);
   const [oldInstancesToDelete, setOldInstancesToDelete] = useState<EnrichedInstanceDisplayState[]>([]);
   const [isDeletingOldInstances, setIsDeletingOldInstances] = useState(false);
   const [associatedProjectsForBulkDelete, setAssociatedProjectsForBulkDelete] = useState<Record<string, Project[]>>({});
 
-
-  const [sortConfig, setSortConfig] = useState<{ key: keyof EnrichedInstanceDisplayState | null; direction: 'ascending' | 'descending' }>({
-    key: 'lastSeen',
-    direction: 'descending',
-  });
+  // Default sort by lastSeen descending, which is good for Accordion view
+  const sortedInstances = useMemo(() => {
+    return [...instances].sort((a, b) => {
+      const valA = a.lastSeen;
+      const valB = b.lastSeen;
+      if (valA == null && valB == null) return 0;
+      if (valA == null) return 1;
+      if (valB == null) return -1;
+      return (valB as number) - (valA as number); // Descending
+    });
+  }, [instances]);
 
   const fetchAndEnrichInstances = useCallback(async () => {
     setIsLoadingInstances(true);
@@ -96,7 +99,7 @@ export function AdminInstanceTable() {
     try {
       await deleteInstanceDisplayStateFromAdmin(pin);
       toast({ title: "Instance State and Associated Projects Deleted", description: `Display instance PIN ${pin} state, and all its associated projects and media, have been deleted.` });
-      await fetchAndEnrichInstances();
+      await fetchAndEnrichInstances(); // Refresh the list
     } catch (error) {
        toast({ title: "Error", description: `Failed to delete instance ${pin} and its projects. Some resources might still exist.`, variant: "destructive" });
     } finally {
@@ -145,49 +148,6 @@ export function AdminInstanceTable() {
     }
   }, [oldInstancesToDelete, deleteInstanceDisplayStateFromAdmin, toast, fetchAndEnrichInstances]);
 
-  const requestSort = (key: keyof EnrichedInstanceDisplayState) => {
-    let direction: 'ascending' | 'descending' = 'ascending';
-    if (sortConfig.key === key && sortConfig.direction === 'ascending') {
-      direction = 'descending';
-    }
-    setSortConfig({ key, direction });
-  };
-
-  const sortedInstances = useMemo(() => {
-    let sortableItems = [...instances];
-    if (sortConfig.key !== null) {
-      const key = sortConfig.key;
-      sortableItems.sort((a, b) => {
-        const valA = a[key];
-        const valB = b[key];
-
-        if (valA == null && valB == null) return 0;
-        if (valA == null) return 1;
-        if (valB == null) return -1;
-
-        let comparison = 0;
-        if (key === 'lastSeen') {
-          comparison = (valA as number) - (valB as number);
-        } else if (typeof valA === 'number' && typeof valB === 'number') {
-          comparison = valA - valB;
-        } else if (typeof valA === 'string' && typeof valB === 'string') {
-          comparison = valA.localeCompare(valB);
-        } else {
-          comparison = String(valA).localeCompare(String(valB));
-        }
-
-        return sortConfig.direction === 'ascending' ? comparison : -comparison;
-      });
-    }
-    return sortableItems;
-  }, [instances, sortConfig]);
-
-  const SortIndicator = ({ columnKey }: { columnKey: keyof EnrichedInstanceDisplayState }) => {
-    if (sortConfig.key !== columnKey) return null;
-    const Icon = sortConfig.direction === 'ascending' ? ArrowUp : ArrowDown;
-    return <Icon className="ml-1 inline h-3 w-3" />;
-  };
-
   const isLoading = projectsLoading || isLoadingInstances;
 
   if (isLoading) {
@@ -212,71 +172,72 @@ export function AdminInstanceTable() {
         </Button>
       </div>
 
-      {sortedInstances.length === 0 && !isLoading && (
+      {sortedInstances.length === 0 && !isLoading ? (
          <div className="text-center py-10 text-muted-foreground">
             <RadioTower className="h-12 w-12 mx-auto mb-4 opacity-50" />
             <p>No active display instances found.</p>
           </div>
-      )}
+      ) : (
+        <ScrollArea className="h-[calc(100vh-300px)] md:h-[calc(100vh-350px)]">
+          <Accordion type="single" collapsible className="w-full space-y-2">
+            {sortedInstances.map((instance) => {
+              const associatedProjectsForThisInstance = projects.filter(p => p.instancePin === instance.pin);
+              return (
+                <AccordionItem value={instance.pin} key={instance.pin} className="border bg-card rounded-md shadow-sm overflow-hidden">
+                  <AccordionTrigger className="px-4 py-3 hover:no-underline text-left">
+                    <div className="flex flex-1 items-center justify-between gap-2">
+                        <div className="flex items-center gap-3">
+                            <RadioTower className="h-5 w-5 text-primary flex-shrink-0" />
+                            <span className="font-mono font-semibold text-base truncate" title={`PIN: ${instance.pin}`}>{instance.pin}</span>
+                            <Badge variant="secondary" className="whitespace-nowrap">
+                                {associatedProjectsForThisInstance.length} project{associatedProjectsForThisInstance.length !== 1 ? 's' : ''}
+                            </Badge>
+                        </div>
+                        <div className="text-xs text-muted-foreground text-right whitespace-nowrap flex-shrink-0 ml-2">
+                            Last seen: {instance.lastSeen ? formatDistanceToNow(new Date(instance.lastSeen), { addSuffix: true }) : 'N/A'}
+                        </div>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent className="px-4 pb-4 pt-2 space-y-4 bg-muted/30">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                      <div><strong>Current Project:</strong> <span className="break-all">{instance.projectName || (instance.currentProjectId ? <span className="italic text-muted-foreground">ID: {instance.currentProjectId}</span> : <span className="text-muted-foreground">None</span>)}</span></div>
+                      <div><strong>Current Media:</strong> <span className="break-all">{instance.mediaName || (instance.currentMediaId ? <span className="italic text-muted-foreground">ID: {instance.currentMediaId}</span> : <span className="text-muted-foreground">None</span>)}</span></div>
+                    </div>
 
-      {sortedInstances.length > 0 && (
-        <ScrollArea className="h-[calc(100vh-420px)]">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead onClick={() => requestSort('pin')} className="cursor-pointer hover:bg-muted/50 transition-colors">
-                  Instance PIN <SortIndicator columnKey="pin" />
-                </TableHead>
-                <TableHead onClick={() => requestSort('projectName')} className="cursor-pointer hover:bg-muted/50 transition-colors">
-                  Current Project <SortIndicator columnKey="projectName" />
-                </TableHead>
-                <TableHead onClick={() => requestSort('mediaName')} className="cursor-pointer hover:bg-muted/50 transition-colors">
-                  Current Media <SortIndicator columnKey="mediaName" />
-                </TableHead>
-                <TableHead onClick={() => requestSort('lastSeen')} className="hidden md:table-cell cursor-pointer hover:bg-muted/50 transition-colors">
-                  Last Seen <SortIndicator columnKey="lastSeen" />
-                </TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sortedInstances.map((instance) => (
-                <TableRow key={instance.pin}>
-                  <TableCell className="font-mono font-semibold">{instance.pin}</TableCell>
-                  <TableCell>
-                    {instance.projectName || (instance.currentProjectId ? <span className="text-muted-foreground italic">ID: {instance.currentProjectId}</span> : <span className="text-muted-foreground">None</span>)}
-                  </TableCell>
-                  <TableCell>
-                    {instance.mediaName || (instance.currentMediaId ? <span className="text-muted-foreground italic">ID: {instance.currentMediaId}</span> : <span className="text-muted-foreground">None</span>)}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell text-sm">
-                    {instance.lastSeen ?
-                      <span title={new Date(instance.lastSeen).toLocaleString()}>
-                        {formatDistanceToNow(new Date(instance.lastSeen), { addSuffix: true })}
-                      </span>
-                      : <span className="text-muted-foreground">N/A</span>
-                    }
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Delete Instance State and Associated Projects"
-                      disabled={isProcessingInstance === instance.pin}
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => handleOpenSingleDeleteDialog(instance)}
-                    >
-                      {isProcessingInstance === instance.pin ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                    <div>
+                      <h4 className="font-medium mb-1 text-sm">Associated Projects:</h4>
+                      {associatedProjectsForThisInstance.length > 0 ? (
+                        <ScrollArea className="max-h-32 border rounded-md bg-background p-2">
+                            <ul className="space-y-1">
+                            {associatedProjectsForThisInstance.map(proj => (
+                                <li key={proj.id} className="flex items-center text-xs">
+                                <Folder className="h-3.5 w-3.5 mr-1.5 text-muted-foreground flex-shrink-0" />
+                                <span className="truncate text-muted-foreground" title={proj.name}>{proj.name}</span>
+                                </li>
+                            ))}
+                            </ul>
+                        </ScrollArea>
                       ) : (
-                        <Trash2 className="h-4 w-4" />
+                        <p className="text-xs text-muted-foreground italic">No projects associated with this PIN.</p>
                       )}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                    </div>
+
+                    <div className="flex justify-end pt-2">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleOpenSingleDeleteDialog(instance)}
+                        disabled={isProcessingInstance === instance.pin}
+                      >
+                        {isProcessingInstance === instance.pin ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                        Delete Instance & Projects
+                      </Button>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              );
+            })}
+          </Accordion>
         </ScrollArea>
       )}
 
@@ -384,3 +345,5 @@ export function AdminInstanceTable() {
     </>
   );
 }
+
+    

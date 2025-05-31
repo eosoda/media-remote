@@ -2,7 +2,7 @@
 "use client";
 
 import { useProjects } from "@/contexts/ProjectContext";
-import { PlayCircle, Loader2, Image as ImageIcon, Video as VideoIcon, List, CheckSquare, ListTree, ArrowUp, ArrowDown } from "lucide-react";
+import { PlayCircle, Loader2, Image as ImageIcon, Video as VideoIcon, List, CheckSquare, ListTree, ArrowUp, ArrowDown, XCircle } from "lucide-react"; // Added XCircle
 import { ScrollArea } from "./ui/scroll-area";
 import { Button } from "./ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -17,6 +17,9 @@ interface MediaGalleryProps {
   externallyControlledMediaId?: string | null;
   interactive?: boolean;
   showSetCurrent?: boolean;
+  allowReordering?: boolean;
+  onClearActiveMedia?: () => Promise<void>; // New prop
+  isAnyMediaActive?: boolean; // New prop
 }
 
 export function MediaGallery({
@@ -24,7 +27,10 @@ export function MediaGallery({
   externallyControlledMediaId,
   project: projectProp,
   interactive: interactiveProp,
-  showSetCurrent: showSetCurrentProp
+  showSetCurrent: showSetCurrentProp,
+  allowReordering: allowReorderingProp,
+  onClearActiveMedia, // New prop
+  isAnyMediaActive,   // New prop
 }: MediaGalleryProps) {
   const {
     activeProjectForMenu: activeProjectFromContext,
@@ -38,11 +44,12 @@ export function MediaGallery({
   const [isSettingActiveMediaId, setIsSettingActiveMediaId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<"all" | "image" | "video">("all");
   const [isOrderingEnabled, setIsOrderingEnabled] = useState(false);
+  const [isClearingActiveMedia, setIsClearingActiveMedia] = useState(false); // New state
 
   const currentProjectToDisplay = useMemo(() => projectProp || activeProjectFromContext, [projectProp, activeProjectFromContext]);
 
   const allMediaForCurrentProject = useMemo(() => {
-    if (projectProp && projectProp.media) { // Check if projectProp.media is defined
+    if (projectProp && projectProp.media) {
         return projectProp.media;
     }
     return mediaForActiveProjectFromContext || [];
@@ -122,24 +129,21 @@ export function MediaGallery({
     if (!currentProjectToDisplay?.id || activeFilter !== 'all') return;
 
     setDisplayedMediaItems(prevItems => {
-      const items = [...prevItems]; // Operate on a mutable copy for local state update
+      const items = [...prevItems];
       const currentIndex = items.findIndex(item => item.id === mediaId);
-      if (currentIndex === -1) return prevItems; // Should not happen
+      if (currentIndex === -1) return prevItems;
 
       const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
 
-      if (targetIndex < 0 || targetIndex >= items.length) return prevItems; // Already at top or bottom
+      if (targetIndex < 0 || targetIndex >= items.length) return prevItems;
 
-      // Swap items
       [items[currentIndex], items[targetIndex]] = [items[targetIndex], items[currentIndex]];
       
-      // Update order property for all items
       const updatedItemsWithOrder = items.map((item, index) => ({
         ...item,
         order: index,
       }));
 
-      // Persist the new order to Firestore
       updateMediaOrder(currentProjectToDisplay.id, updatedItemsWithOrder)
         .then(() => {
           toast({
@@ -153,16 +157,16 @@ export function MediaGallery({
             description: "Could not update media order. Please try again.",
             variant: "destructive",
           });
-          // Potentially revert to `allMediaForCurrentProject` if persistence fails
         });
       
-      return updatedItemsWithOrder; // Optimistic UI update
+      return updatedItemsWithOrder;
     });
   }, [currentProjectToDisplay?.id, activeFilter, updateMediaOrder, toast]);
 
 
   const interactive = interactiveProp !== undefined ? interactiveProp : !!currentProjectToDisplay;
   const showSetCurrentEffective = showSetCurrentProp !== undefined ? showSetCurrentProp : !onMediaSelect;
+  const effectiveAllowReordering = allowReorderingProp === undefined ? true : allowReorderingProp;
   const isGalleryOrderingActive = isOrderingEnabled && activeFilter === 'all';
 
   const getPlaceholderMessage = () => {
@@ -197,7 +201,7 @@ export function MediaGallery({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <Tabs value={activeFilter} onValueChange={(value) => setActiveFilter(value as "all" | "image" | "video")} className="">
           <TabsList className={`grid ${tabsListColsClass} md:w-[300px]`}>
             <TabsTrigger value="all"><List className="mr-2 h-4 w-4"/>All</TabsTrigger>
@@ -205,23 +209,48 @@ export function MediaGallery({
             {hasVideosInProject && <TabsTrigger value="video"><VideoIcon className="mr-2 h-4 w-4"/>Videos</TabsTrigger>}
           </TabsList>
         </Tabs>
-        {interactive && (allMediaForCurrentProject && allMediaForCurrentProject.length >=2 ) && (
+        <div className="flex items-center gap-2">
+          {interactive && onClearActiveMedia && isAnyMediaActive && (
             <Button
               variant="outline"
-              onClick={() => {
-                if (activeFilter !== 'all' && !isOrderingEnabled) {
-                  toast({ description: "Reordering is only available on the 'All' tab. Please switch to 'All' to enable reordering." });
-                  return;
+              size="sm"
+              onClick={async () => {
+                setIsClearingActiveMedia(true);
+                try {
+                  await onClearActiveMedia();
+                  toast({ description: "Active media has been cleared." });
+                } catch (error) {
+                  toast({ description: "Failed to clear active media. Please try again.", variant: "destructive" });
+                } finally {
+                  setIsClearingActiveMedia(false);
                 }
-                setIsOrderingEnabled(prev => !prev);
               }}
-              title={isOrderingEnabled ? "Disable Reordering (View Mode)" : "Enable Reordering (Order Mode)"}
-              disabled={ (activeFilter !== 'all' && !isOrderingEnabled) || allMediaForCurrentProject.length < 2 } 
+              disabled={isClearingActiveMedia}
+              title="Clear currently active media from display"
             >
-            {isGalleryOrderingActive ? <CheckSquare className="mr-2 h-4 w-4 text-green-600" /> : <ListTree className="mr-2 h-4 w-4" />}
-            {isGalleryOrderingActive ? "Reordering Active" : "Reorder Media"}
+              {isClearingActiveMedia ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" /> }
+              Clear Active
             </Button>
-        )}
+          )}
+          {interactive && effectiveAllowReordering && (allMediaForCurrentProject && allMediaForCurrentProject.length >=2 ) && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (activeFilter !== 'all' && !isOrderingEnabled) {
+                    toast({ description: "Reordering is only available on the 'All' tab. Please switch to 'All' to enable reordering." });
+                    return;
+                  }
+                  setIsOrderingEnabled(prev => !prev);
+                }}
+                title={isOrderingEnabled ? "Disable Reordering (View Mode)" : "Enable Reordering (Order Mode)"}
+                disabled={ (activeFilter !== 'all' && !isOrderingEnabled) || allMediaForCurrentProject.length < 2 } 
+              >
+              {isGalleryOrderingActive ? <CheckSquare className="mr-2 h-4 w-4 text-green-600" /> : <ListTree className="mr-2 h-4 w-4" />}
+              {isGalleryOrderingActive ? "Reordering Active" : "Reorder Media"}
+              </Button>
+          )}
+        </div>
       </div>
       {activeFilter !== 'all' && isOrderingEnabled && (
         <div className="mb-2 p-2 text-sm bg-amber-100 text-amber-700 border border-amber-200 rounded-md">

@@ -86,7 +86,7 @@ export default function AdminPage() {
         <h1 className="text-3xl font-bold tracking-tight">Admin Panel</h1>
       </div>
       <Tabs defaultValue="projects" className="w-full">
-        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-2 md:w-[450px]">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="projects"><FolderGit2 className="mr-2 h-4 w-4" /> Project Management</TabsTrigger>
           <TabsTrigger value="instances"><RadioTower className="mr-2 h-4 w-4" /> Display Instances</TabsTrigger>
         </TabsList>

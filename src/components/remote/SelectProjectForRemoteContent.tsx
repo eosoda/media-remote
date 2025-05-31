@@ -97,24 +97,24 @@ export default function SelectProjectForRemoteContent() {
   const projectsForThisInstance = projects.filter(p => p.instancePin === targetInstancePin);
 
   return (
-    <div className="container mx-auto py-12 px-4 md:px-6">
+    <div className="container mx-auto py-6 sm:py-12 px-4">
       <Card className="max-w-2xl mx-auto shadow-xl rounded-lg">
-        <CardHeader className="bg-muted/30 p-6">
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex items-center space-x-3">
-              <Smartphone className="h-8 w-8 text-primary" />
-              <CardTitle className="text-3xl font-bold">Select Project for Remote</CardTitle>
+        <CardHeader className="bg-muted/30 p-4 sm:p-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-1 gap-2 sm:gap-4">
+            <div className="flex items-center space-x-2 sm:space-x-3">
+              <Smartphone className="h-6 w-6 sm:h-7 sm:w-7 text-primary" />
+              <CardTitle className="text-xl sm:text-2xl font-bold">Select Project</CardTitle>
             </div>
-            <Button variant="outline" size="sm" onClick={handleLockRemote}>
+            <Button variant="outline" size="sm" onClick={handleLockRemote} className="w-full sm:w-auto">
               <LogIn className="mr-2 h-4 w-4 transform rotate-180" /> Change Display PIN
             </Button>
           </div>
-          <CardDescription className="text-md">
+          <CardDescription className="text-sm sm:text-base">
             Controlling display with PIN: <span className="font-semibold">{targetInstancePin}</span>.
             Choose a project to open its remote control panel.
           </CardDescription>
         </CardHeader>
-        <CardContent className="p-6">
+        <CardContent className="p-4 sm:p-6">
           {projectsForThisInstance.length === 0 ? (
             <div className="text-center py-6 text-muted-foreground">
                 <FolderOpen className="mx-auto h-12 w-12 mb-4 opacity-50" />
@@ -128,7 +128,7 @@ export default function SelectProjectForRemoteContent() {
             <ul className="space-y-3">
               {projectsForThisInstance.map((project) => (
                 <li key={project.id}>
-                  <Button variant="outline" size="lg" className="w-full justify-between py-6 text-lg" asChild>
+                  <Button variant="outline" size="lg" className="w-full justify-between py-6 text-base sm:text-lg" asChild>
                     <Link href={`/remote/${project.id}?instancePin=${targetInstancePin}`}>
                       <span>{project.name}</span>
                        <div className="flex items-center">

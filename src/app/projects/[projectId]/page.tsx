@@ -10,13 +10,13 @@ import { Button } from "@/components/ui/button";
 import { ArrowLeft, Tv2, Settings } from "lucide-react";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ProjectSettingsModal } from "@/components/ProjectSettingsModal"; // Import the modal
+import { ProjectSettingsModal } from "@/components/ProjectSettingsModal";
 import type { Project } from "@/types";
 
 export default function ProjectDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { getProject, isLoading, setActiveProjectForMenu } = useProjects();
+  const { getProject, isLoading, setActiveProjectForMenu, setCurrentMediaForProject } = useProjects();
   const projectId = params.projectId as string;
 
   const [project, setProject] = useState<Project | null>(null);
@@ -31,13 +31,22 @@ export default function ProjectDetailPage() {
       document.title = `Project: ${currentProject.name} - Media Remote`;
     } else if (!isLoading) {
       document.title = `Project Not Found - Media Remote`;
-      // Optionally redirect if project is definitely not found after loading
-      // router.push('/projects-overview'); 
     }
   }, [projectId, getProject, isLoading, setActiveProjectForMenu, router]);
 
+  const handleClearActiveMediaForProject = async () => {
+    if (project) {
+      try {
+        await setCurrentMediaForProject(project.id, null);
+        // Toast for success/failure can be handled within MediaGallery or here
+      } catch (error) {
+        console.error("Failed to clear active media for project:", error);
+        // Optionally show a toast here if not handled by MediaGallery
+      }
+    }
+  };
 
-  if (isLoading && !project) { // Show loading only if project isn't set yet
+  if (isLoading && !project) {
     return <div className="flex justify-center items-center h-screen"><p>Loading project details...</p></div>;
   }
 
@@ -67,7 +76,7 @@ export default function ProjectDetailPage() {
             </Button>
             <h1 className="text-3xl font-bold tracking-tight">{project.name}</h1>
             <span className="text-sm font-mono">
-              Instance PIN for this project's media: {project.instancePin}
+              Instance PIN: {project.instancePin}
             </span>
           </div>
           <div className="flex space-x-2">
@@ -90,7 +99,12 @@ export default function ProjectDetailPage() {
               <CardDescription>View and manage uploaded media files for "{project.name}". Click on a media item to set it as the current one for display.</CardDescription>
           </CardHeader>
           <CardContent>
-              <MediaGallery project={project} showSetCurrent={true} />
+              <MediaGallery 
+                project={project} 
+                showSetCurrent={true}
+                onClearActiveMedia={handleClearActiveMediaForProject}
+                isAnyMediaActive={!!project?.currentMediaId}
+              />
           </CardContent>
         </Card>
       </div>

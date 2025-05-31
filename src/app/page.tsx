@@ -4,7 +4,7 @@
 import { useEffect } from "react";
 import { useProjects } from "@/contexts/ProjectContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FolderKanban, Smartphone, Tv2, ArrowRight, KeyRound, Copy } from "lucide-react";
+import { FolderKanban, Smartphone, ArrowRight, KeyRound, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
@@ -59,13 +59,7 @@ export default function HomePage() {
                   <span>Loading PIN...</span>
                 </div>
               )}
-               <Button asChild size="sm" className="w-full mt-auto">
-                <Link href="/display" target="_blank" rel="noopener noreferrer">
-                  <span className="flex items-center justify-center w-full"> {/* Ensure span takes full width for justify-center */}
-                    <Tv2 className="mr-2 h-4 w-4"/> Open This Device's Display
-                  </span>
-                </Link>
-              </Button>
+               {/* Button removed from here */}
             </CardContent>
           </Card>
           

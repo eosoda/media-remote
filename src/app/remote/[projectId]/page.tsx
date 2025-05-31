@@ -56,13 +56,24 @@ export default function RemoteControlPage() {
       if (data?.currentProjectId === projectId || !data?.currentProjectId) {
         setInstanceControlledMediaId(data?.currentMediaId || null);
       } else if (data?.currentProjectId && data.currentProjectId !== projectId) {
-        // The controlled instance is displaying a different project, so this remote shouldn't show any media as active.
         setInstanceControlledMediaId(null);
       }
     });
 
     return () => unsubscribe();
   }, [targetInstancePin, projectId, listenToInstanceDisplayState]);
+
+  const handleClearActiveMediaForRemote = async () => {
+    if (targetInstancePin && project) {
+      try {
+        await updateDisplayForInstance(targetInstancePin, project.id, null);
+        // Toast for success/failure can be handled within MediaGallery or here
+      } catch (error) {
+        console.error("Failed to clear active media for remote:", error);
+         // Optionally show a toast here if not handled by MediaGallery
+      }
+    }
+  };
 
   if (isPageLoading) {
     return (
@@ -74,8 +85,6 @@ export default function RemoteControlPage() {
   }
 
   if (!targetInstancePin) {
-    // This case should ideally be caught by the useEffect above and redirect.
-    // But as a fallback UI:
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] text-center p-4">
         <AlertTriangle className="h-12 w-12 text-destructive mb-4" />
@@ -135,30 +144,20 @@ export default function RemoteControlPage() {
             Controlling display with PIN: <span className="font-semibold text-foreground">{targetInstancePin}</span>. Select media to display.
           </p>
         </div>
-        {thisDevicePin === targetInstancePin && (
-          <Button asChild variant="outline">
-            <Link href="/display" target="_blank" rel="noopener noreferrer">
-              <Tv2 className="mr-2 h-4 w-4" /> Open This Device&apos;s Display
-            </Link>
-          </Button>
-        )}
+        
       </div>
 
       <Card className="w-full">
-        <CardHeader>
-          <CardTitle>Select Media to Display</CardTitle>
-          <CardDescription>
-            Click on a media item below. It will instantly appear on the display screen associated with PIN <span className="font-semibold">"{targetInstancePin}"</span>.
-            The currently active item on the display is highlighted.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           <MediaGallery
             project={project}
             onMediaSelect={handleMediaSelect}
             interactive={true}
             externallyControlledMediaId={instanceControlledMediaId}
-            showSetCurrent={false} // On remote, selecting *is* setting current for the target
+            showSetCurrent={false}
+            allowReordering={false}
+            onClearActiveMedia={handleClearActiveMediaForRemote}
+            isAnyMediaActive={!!instanceControlledMediaId}
           />
         </CardContent>
       </Card>
