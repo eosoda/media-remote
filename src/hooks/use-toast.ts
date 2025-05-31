@@ -1,3 +1,4 @@
+
 "use client"
 
 // Inspired by react-hot-toast library
@@ -31,7 +32,7 @@ const actionTypes = {
   REMOVE_TOAST: "REMOVE_TOAST",
 } as const
 
-type Action = // Removed ActionType reference
+type Action =
   | {
       type: "ADD_TOAST"
       toast: ToasterToast
@@ -40,9 +41,9 @@ type Action = // Removed ActionType reference
       type: "UPDATE_TOAST"
       toast: Partial<ToasterToast>
     } | {
-      type: "DISMISS_TOAST" // Directly use string literal types
+      type: "DISMISS_TOAST"
       toastId?: ToasterToast["id"]
-    } | { // Add REMOVE_TOAST action type
+    } | {
       type: "REMOVE_TOAST";
       toastId?: ToasterToast["id"];
 
@@ -187,4 +188,4 @@ function useToast() {
   }
 }
 
-export { useToast, toast }
+export { useToast }
