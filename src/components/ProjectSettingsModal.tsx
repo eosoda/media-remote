@@ -117,43 +117,38 @@ export function ProjectSettingsModal({ project, isOpen, onClose }: ProjectSettin
     if (backgroundImageFile) { 
       setIsUploadingBackground(true);
       try {
-        const presignedUrlResponse = await fetch('/api/minio/upload-url', {
+        const signatureResponse = await fetch('/api/cloudinary/signature', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fileName: backgroundImageFile.name,
-            fileType: backgroundImageFile.type,
-            projectId: project.id,
-            instancePin: project.instancePin, // Ensure instancePin is from the project being edited
-            pathType: 'projectBackground',
-          }),
+          body: JSON.stringify({ projectId: project.id, instancePin: project.instancePin }),
         });
 
-        if (!presignedUrlResponse.ok) {
-          const errorData = await presignedUrlResponse.json();
-          throw new Error(errorData.error || 'Failed to get background upload URL.');
-        }
-        const { presignedUrl, objectKey, method } = await presignedUrlResponse.json();
-        
-        const minioEndpoint = process.env.NEXT_PUBLIC_MINIO_ENDPOINT;
-        const minioBucket = process.env.NEXT_PUBLIC_MINIO_BUCKET_NAME;
-        if (!minioEndpoint || !minioBucket) {
-            throw new Error("MinIO configuration for public URL is missing.");
+        if (!signatureResponse.ok) {
+          const errorData = await signatureResponse.json();
+          throw new Error(errorData.error || 'Failed to get upload signature.');
         }
 
-        const uploadToMinioResponse = await fetch(presignedUrl, {
-          method: method || 'PUT',
-          body: backgroundImageFile,
-          headers: { 'Content-Type': backgroundImageFile.type },
+        const { signature, timestamp, apiKey, folder, postUrl } = await signatureResponse.json();
+
+        const formData = new FormData();
+        formData.append('file', backgroundImageFile);
+        formData.append('api_key', apiKey);
+        formData.append('timestamp', timestamp);
+        formData.append('signature', signature);
+        formData.append('folder', folder);
+
+        const uploadResponse = await fetch(postUrl, {
+          method: 'POST',
+          body: formData,
         });
 
-        if (!uploadToMinioResponse.ok) {
-          throw new Error('Failed to upload background image to MinIO.');
+        if (!uploadResponse.ok) {
+          throw new Error('Failed to upload background image to Cloudinary.');
         }
-        
-        const endpoint = minioEndpoint.endsWith('/') ? minioEndpoint.slice(0, -1) : minioEndpoint;
-        newBackgroundUrl = `${endpoint}/${minioBucket}/${objectKey}`;
-        newBackgroundStoragePath = objectKey;
+
+        const uploadResult = await uploadResponse.json();
+        newBackgroundUrl = uploadResult.secure_url;
+        newBackgroundStoragePath = uploadResult.public_id;
 
       } catch (error) {
         toast({
@@ -170,8 +165,8 @@ export function ProjectSettingsModal({ project, isOpen, onClose }: ProjectSettin
       newBackgroundUrl = null;
       newBackgroundStoragePath = null; 
     } else if (project.defaultDisplayBackgroundStoragePath && !backgroundImageFile) {
-      newBackgroundUrl = project.defaultDisplayBackground;
-      newBackgroundStoragePath = project.defaultDisplayBackgroundStoragePath;
+      newBackgroundUrl = project.defaultDisplayBackground || null;
+      newBackgroundStoragePath = project.defaultDisplayBackgroundStoragePath || null;
     }
 
     try {

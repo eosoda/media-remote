@@ -1,6 +1,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Info, MonitorPlay, Smartphone, Tv2, UploadCloud, FolderOpen, Database, Layers, Palette } from "lucide-react"; // Added Database, Layers, Palette
+import { Info, MonitorPlay, Smartphone, Tv2, UploadCloud, FolderOpen, Database, Layers, Palette, ShieldCheck } from "lucide-react";
 
 export default function AboutPage() {
   return (
@@ -22,7 +22,7 @@ export default function AboutPage() {
               Media Remote is a web application designed to help you organize your images and videos into projects.
               You can then easily display your selected media, for example, on a large screen or projector, and control the playback
               from another device like your phone or tablet using the web-based remote. Your media files are stored securely
-              in a MinIO object storage, and project data along with display states are managed using Firebase Firestore.
+              in Cloudinary, and project data along with display states are managed using Firebase Firestore.
             </p>
           </section>
 
@@ -40,7 +40,7 @@ export default function AboutPage() {
                 <div className="flex-shrink-0 h-6 w-6 mt-1 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold">2</div>
                 <div>
                   <h3 className="font-medium text-foreground"><UploadCloud className="inline h-5 w-5 mr-1" /> Upload Media:</h3>
-                  <p>Once a project is created, navigate to its page and upload your images (JPG, PNG, GIF, WebP) and videos (MP4, WebM) to MinIO storage via the application.</p>
+                  <p>Once a project is created, navigate to its page and upload your images (JPG, PNG, GIF, WebP) and videos (MP4, WebM) to Cloudinary storage via the application.</p>
                 </div>
               </div>
               <div className="flex items-start space-x-3">
@@ -64,7 +64,8 @@ export default function AboutPage() {
             <h2 className="text-2xl font-semibold mb-3">Key Features</h2>
             <ul className="list-disc list-inside space-y-2 text-muted-foreground">
               <li><strong>Project-based Organization:</strong> Keep your media neatly organized.</li>
-              <li><Database className="inline h-5 w-5 mr-1 text-accent" /> <strong>Cloud Media Storage:</strong> Securely store your media assets in MinIO object storage.</li>
+              <li><Database className="inline h-5 w-5 mr-1 text-accent" /> <strong>Cloud Media Storage:</strong> Securely store your media assets in Cloudinary.</li>
+              <li><ShieldCheck className="inline h-5 w-5 mr-1 text-accent" /> <strong>Content Protection:</strong> Publicly displayed media is protected against unauthorized saving and right-clicking.</li>
               <li><Layers className="inline h-5 w-5 mr-1 text-accent" /> <strong>Firebase-powered State:</strong> Real-time synchronization of display states across devices using Firebase Firestore.</li>
               <li><strong>Remote Control:</strong> Manage what's displayed from anywhere with a web-enabled device.</li>
               <li><strong>Supported Media:</strong> Images (JPG, PNG, GIF, WebP) and Videos (MP4, WebM).</li>
@@ -81,12 +82,12 @@ export default function AboutPage() {
               <li>Tailwind CSS</li>
               <li>ShadCN UI Components</li>
               <li>Firebase (Firestore for database and real-time updates)</li>
-              <li>MinIO (S3-compatible object storage for media files)</li>
+              <li>Cloudinary (Robust cloud-based media storage and CDN delivery)</li>
             </ul>
           </section>
 
           <section className="text-center text-sm text-muted-foreground pt-4 border-t">
-            <p>&copy; {new Date().getFullYear()} Media Remote. Built with Next.js, Tailwind CSS, Firebase, and MinIO.</p>
+            <p>&copy; {new Date().getFullYear()} Media Remote. Built with Next.js, Tailwind CSS, Firebase, and Cloudinary.</p>
           </section>
         </CardContent>
       </Card>

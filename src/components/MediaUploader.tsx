@@ -37,53 +37,7 @@ interface UploadingFileState {
   thumbnailObjectKey?: string;
 }
 
-const generateVideoThumbnail = (videoFile: File): Promise<{ thumbnailBlob: Blob, thumbnailFileName: string } | null> => {
-  return new Promise((resolve) => {
-    if (!videoFile.type.startsWith('video/')) {
-      resolve(null);
-      return;
-    }
 
-    const video = document.createElement('video');
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-
-    video.onloadeddata = () => {
-      video.currentTime = Math.min(1, video.duration / 2); // Seek to 1s or midpoint
-    };
-
-    video.onseeked = () => {
-      if (!context) {
-        resolve(null);
-        return;
-      }
-      const aspectRatio = video.videoWidth / video.videoHeight;
-      canvas.width = 300; 
-      canvas.height = 300 / aspectRatio;
-      
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const extension = videoFile.name.split('.').pop();
-          const baseName = videoFile.name.substring(0, videoFile.name.length - (extension ? extension.length + 1 : 0));
-          resolve({ thumbnailBlob: blob, thumbnailFileName: `${baseName}_thumb.png` });
-        } else {
-          resolve(null);
-        }
-        URL.revokeObjectURL(video.src); 
-      }, 'image/png', 0.85); 
-    };
-
-    video.onerror = () => {
-      console.error("Error loading video for thumbnail generation");
-      URL.revokeObjectURL(video.src);
-      resolve(null);
-    };
-    
-    video.src = URL.createObjectURL(videoFile);
-    video.load(); 
-  });
-};
 
 
 export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProps) {
@@ -127,92 +81,58 @@ export function MediaUploader({ projectId, onUploadComplete }: MediaUploaderProp
 
       for (const currentUpload of newUploads) {
         const { file, id: uploadId } = currentUpload;
-        let thumbnailObjectKey: string | undefined = undefined;
-        let videoObjectKey: string | undefined = undefined;
 
         try {
-          if (file.type.startsWith("video/")) {
-            updateUploadState(uploadId, { status: 'generating_thumb', progress: 5 });
-            const thumbnailData = await generateVideoThumbnail(file);
-
-            if (thumbnailData) {
-              const { thumbnailBlob, thumbnailFileName } = thumbnailData;
-              updateUploadState(uploadId, { status: 'getting_thumb_url', progress: 10 });
-
-              const thumbPresignedUrlResponse = await fetch('/api/minio/upload-url', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                  fileName: thumbnailFileName, 
-                  fileType: thumbnailBlob.type, 
-                  projectId,
-                  instancePin
-                }),
-              });
-
-              if (!thumbPresignedUrlResponse.ok) throw new Error(await thumbPresignedUrlResponse.json().then(e => e.error || 'Failed to get thumbnail upload URL'));
-              
-              const { presignedUrl: thumbPresignedUrl, objectKey: thumbObjKey, method: thumbMethod } = await thumbPresignedUrlResponse.json();
-              thumbnailObjectKey = thumbObjKey;
-              updateUploadState(uploadId, { thumbnailObjectKey, progress: 15 });
-
-              updateUploadState(uploadId, { status: 'uploading_thumb', progress: 20 });
-              const uploadToMinioThumbResponse = await fetch(thumbPresignedUrl, {
-                method: thumbMethod || 'PUT',
-                body: thumbnailBlob,
-                headers: { 'Content-Type': thumbnailBlob.type },
-              });
-              if (!uploadToMinioThumbResponse.ok) throw new Error('Failed to upload thumbnail to MinIO');
-              updateUploadState(uploadId, { progress: 25 });
-            } else {
-              console.warn(`Could not generate thumbnail for ${file.name}`);
-            }
-          }
-
-          const mainFileProgressStart = file.type.startsWith("video/") ? 25 : 10;
-          updateUploadState(uploadId, { status: file.type.startsWith("video/") ? 'getting_video_url' : 'getting_url', progress: mainFileProgressStart });
+          updateUploadState(uploadId, { status: 'getting_url', progress: 10 });
           
-          const presignedUrlResponse = await fetch('/api/minio/upload-url', {
+          const signatureResponse = await fetch('/api/cloudinary/signature', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-              fileName: file.name, 
-              fileType: file.type,
-              projectId,
-              instancePin
-            }),
+            body: JSON.stringify({ projectId, instancePin }),
           });
 
-          if (!presignedUrlResponse.ok) {
-            const errorData = await presignedUrlResponse.json();
-            throw new Error(errorData.error || `Failed to get upload URL (status: ${presignedUrlResponse.status})`);
+          if (!signatureResponse.ok) {
+            const errorData = await signatureResponse.json();
+            throw new Error(errorData.error || `Failed to get upload signature`);
           }
           
-          const { presignedUrl, objectKey, method } = await presignedUrlResponse.json();
-          videoObjectKey = objectKey;
+          const { signature, timestamp, apiKey, folder, postUrl } = await signatureResponse.json();
           
-          updateUploadState(uploadId, { objectKey: videoObjectKey, progress: mainFileProgressStart + 15 });
-          updateUploadState(uploadId, { status: file.type.startsWith("video/") ? 'uploading_video' : 'uploading', progress: mainFileProgressStart + 20 });
+          updateUploadState(uploadId, { status: file.type.startsWith("video/") ? 'uploading_video' : 'uploading', progress: 30 });
           
-          const uploadToMinioResponse = await fetch(presignedUrl, {
-            method: method || 'PUT', 
-            body: file,
-            headers: { 'Content-Type': file.type },
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('api_key', apiKey);
+          formData.append('timestamp', timestamp);
+          formData.append('signature', signature);
+          formData.append('folder', folder);
+          
+          const uploadResponse = await fetch(postUrl, {
+            method: 'POST', 
+            body: formData,
           });
 
-          if (!uploadToMinioResponse.ok) {
-             let minioErrorText = await uploadToMinioResponse.text();
-             try {
-                const xmlError = new DOMParser().parseFromString(minioErrorText, "application/xml");
-                const errorMessageNode = xmlError.querySelector("Message");
-                if (errorMessageNode) minioErrorText = errorMessageNode.textContent || minioErrorText;
-             } catch (e) { /* Ignore parsing error, use raw text */ }
-            throw new Error(`Failed to upload to MinIO (status: ${uploadToMinioResponse.status}): ${minioErrorText || uploadToMinioResponse.statusText}`);
+          if (!uploadResponse.ok) {
+            const errorData = await uploadResponse.json();
+            throw new Error(errorData.error?.message || 'Failed to upload to Cloudinary');
           }
-          updateUploadState(uploadId, { progress: 85 }); // Adjusted progress assuming no AI step
+
+          const uploadResult = await uploadResponse.json();
+          const publicId = uploadResult.public_id;
+          const secureUrl = uploadResult.secure_url;
+          
+          let thumbnailUrl = undefined;
+          let thumbnailPublicId = undefined;
+
+          if (file.type.startsWith("video/")) {
+             thumbnailUrl = secureUrl.replace(/\.(mp4|webm)$/i, '.jpg');
+             thumbnailPublicId = publicId;
+          }
+
+          updateUploadState(uploadId, { objectKey: publicId, thumbnailObjectKey: thumbnailPublicId, progress: 85 });
 
           updateUploadState(uploadId, { status: 'processing_db', progress: 90 });
-          const newMedia = await addMediaToProject(projectId, file, videoObjectKey, thumbnailObjectKey);
+          const newMedia = await addMediaToProject(projectId, file, secureUrl, publicId, thumbnailUrl, thumbnailPublicId);
           
           if (newMedia) {
             updateUploadState(uploadId, { progress: 100, status: 'complete' });

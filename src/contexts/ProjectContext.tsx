@@ -33,8 +33,7 @@ import {
   writeBatch,
   setDoc,
 } from "firebase/firestore";
-import { minioS3Client, MINIO_BUCKET_NAME } from "@/lib/minio"; 
-import { DeleteObjectCommand } from "@aws-sdk/client-s3";
+
 
 const PROJECTS_COLLECTION = "projects";
 const MEDIA_SUBCOLLECTION = "media";
@@ -60,8 +59,10 @@ interface ProjectContextType {
   addMediaToProject: ( 
     projectId: string,
     file: File, 
-    minioObjectKey: string,
-    thumbnailMinioObjectKey?: string
+    url: string,
+    publicId: string,
+    thumbnailUrl?: string,
+    thumbnailPublicId?: string
   ) => Promise<MediaFile | undefined>;
   deleteMedia: (projectId: string, mediaId: string) => Promise<void>; 
   setCurrentMediaForProject: (
@@ -302,28 +303,15 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
   const addMediaToProject = useCallback(async (
     projectId: string,
     file: File, 
-    minioObjectKey: string,
-    thumbnailMinioObjectKey?: string
+    url: string,
+    publicId: string,
+    thumbnailUrl?: string,
+    thumbnailPublicId?: string
   ): Promise<MediaFile | undefined> => {
     const projectDocRef = doc(firestore, PROJECTS_COLLECTION, projectId);
 
     const projectFromState = projects.find(p => p.id === projectId);
     const currentMediaCount = projectFromState?.media?.length || 0;
-
-    const minioEndpoint = process.env.NEXT_PUBLIC_MINIO_ENDPOINT;
-    const minioBucket = MINIO_BUCKET_NAME; 
-
-    if (!minioEndpoint || !minioBucket) {
-        console.error("MinIO endpoint or bucket name not configured correctly in environment variables.");
-        throw new Error("MinIO configuration missing. Cannot construct media URL.");
-    }
-    const endpoint = minioEndpoint.endsWith('/') ? minioEndpoint.slice(0, -1) : minioEndpoint;
-    const publicUrl = `${endpoint}/${minioBucket}/${minioObjectKey}`;
-
-    let thumbnailPublicUrl: string | undefined = undefined;
-    if (thumbnailMinioObjectKey) {
-      thumbnailPublicUrl = `${endpoint}/${minioBucket}/${thumbnailMinioObjectKey}`;
-    }
 
     const mediaId = uuidv4(); 
     const currentTime = Date.now();
@@ -332,12 +320,12 @@ export const ProjectProvider = ({ children }: { children: ReactNode }) => {
       id: mediaId, 
       name: file.name,
       type: file.type.startsWith("image/") ? "image" : "video",
-      url: publicUrl, 
+      url: url, 
       size: file.size,
       uploadedAt: new Date(currentTime),
-      storagePath: minioObjectKey, 
-      thumbnailUrl: thumbnailPublicUrl,
-      thumbnailStoragePath: thumbnailMinioObjectKey,
+      storagePath: publicId, 
+      thumbnailUrl: thumbnailUrl,
+      thumbnailStoragePath: thumbnailPublicId,
       order: currentMediaCount, 
     };
 
@@ -399,22 +387,16 @@ const deleteMedia = useCallback(async (
       throw new Error("Media information incomplete for deletion.");
     }
 
-    if (!minioS3Client || !MINIO_BUCKET_NAME) {
-      console.error("MinIO S3 client or bucket name not configured for deletion.");
-      throw new Error("MinIO client/bucket not configured.");
-    }
     try {
       if (mediaToDelete.storagePath) {
-        const deleteCommand = new DeleteObjectCommand({ Bucket: MINIO_BUCKET_NAME, Key: mediaToDelete.storagePath });
-        await minioS3Client.send(deleteCommand);
+        await fetch('/api/cloudinary/delete', { method: 'POST', body: JSON.stringify({ publicId: mediaToDelete.storagePath }) });
       }
       if (mediaToDelete.thumbnailStoragePath) {
-        const deleteThumbnailCommand = new DeleteObjectCommand({ Bucket: MINIO_BUCKET_NAME, Key: mediaToDelete.thumbnailStoragePath });
-        await minioS3Client.send(deleteThumbnailCommand);
+        await fetch('/api/cloudinary/delete', { method: 'POST', body: JSON.stringify({ publicId: mediaToDelete.thumbnailStoragePath }) });
       }
-    } catch (minioError) {
-      console.error("Error deleting from MinIO:", minioError);
-      throw new Error(`Failed to delete media from storage: ${minioError instanceof Error ? minioError.message : String(minioError)}`);
+    } catch (error) {
+      console.error("Error deleting from Cloudinary:", error);
+      throw new Error(`Failed to delete media from storage: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     const mediaDocRef = doc(firestore, PROJECTS_COLLECTION, projectId, MEDIA_SUBCOLLECTION, mediaId);
@@ -484,42 +466,25 @@ const deleteMedia = useCallback(async (
 
     const batch = writeBatch(firestore);
     
+    // Cloudinary Folder Deletion
+    const folderPath = `media/${projectToProcess.instancePin}/${projectId}`;
+    try {
+        await fetch('/api/cloudinary/delete-folder', { method: 'POST', body: JSON.stringify({ folderPath }) });
+    } catch (folderDeleteError) {
+        console.error(`Error deleting folder ${folderPath} from Cloudinary:`, folderDeleteError);
+    }
+    
     for (const mediaFile of projectToProcess.media) {
-        if (mediaFile.storagePath && minioS3Client && MINIO_BUCKET_NAME) {
-            try {
-                const deleteCommand = new DeleteObjectCommand({
-                    Bucket: MINIO_BUCKET_NAME,
-                    Key: mediaFile.storagePath,
-                });
-                await minioS3Client.send(deleteCommand);
-            } catch (storageError) {
-                console.error(`Error deleting ${mediaFile.storagePath} from MinIO:`, storageError);
-            }
-        }
-        if (mediaFile.thumbnailStoragePath && minioS3Client && MINIO_BUCKET_NAME) {
-            try {
-                const deleteThumbnailCommand = new DeleteObjectCommand({
-                    Bucket: MINIO_BUCKET_NAME,
-                    Key: mediaFile.thumbnailStoragePath,
-                });
-                await minioS3Client.send(deleteThumbnailCommand);
-            } catch (storageError) {
-                console.error(`Error deleting thumbnail ${mediaFile.thumbnailStoragePath} from MinIO:`, storageError);
-            }
-        }
         const mediaDocRef = doc(firestore, PROJECTS_COLLECTION, projectId, MEDIA_SUBCOLLECTION, mediaFile.id);
         batch.delete(mediaDocRef);
     }
 
-    if (projectToProcess.defaultDisplayBackgroundStoragePath && minioS3Client && MINIO_BUCKET_NAME) {
+    // Default background deletion (in case it is stored outside the project folder)
+    if (projectToProcess.defaultDisplayBackgroundStoragePath && !projectToProcess.defaultDisplayBackgroundStoragePath.startsWith(folderPath)) {
         try {
-            const deleteBgCommand = new DeleteObjectCommand({
-                Bucket: MINIO_BUCKET_NAME,
-                Key: projectToProcess.defaultDisplayBackgroundStoragePath,
-            });
-            await minioS3Client.send(deleteBgCommand);
+            await fetch('/api/cloudinary/delete', { method: 'POST', body: JSON.stringify({ publicId: projectToProcess.defaultDisplayBackgroundStoragePath }) });
         } catch (storageError) {
-            console.error(`Error deleting project background ${projectToProcess.defaultDisplayBackgroundStoragePath} from MinIO:`, storageError);
+            console.error(`Error deleting project background ${projectToProcess.defaultDisplayBackgroundStoragePath} from Cloudinary:`, storageError);
         }
     }
     
@@ -681,20 +646,15 @@ const deleteMedia = useCallback(async (
   
       if (newStoragePath !== undefined) { 
         if (oldStoragePath && oldStoragePath !== newStoragePath) {
-          if (minioS3Client && MINIO_BUCKET_NAME) {
             try {
-              const deleteCommand = new DeleteObjectCommand({
-                Bucket: MINIO_BUCKET_NAME,
-                Key: oldStoragePath,
-              });
-              await minioS3Client.send(deleteCommand);
+              await fetch('/api/cloudinary/delete', { method: 'POST', body: JSON.stringify({ publicId: oldStoragePath }) });
             } catch (error) {
-              console.error("Error deleting old project background from MinIO:", error);
+              console.error("Error deleting old project background from Cloudinary:", error);
             }
-          }
         }
-        updates.defaultDisplayBackground = newBackgroundUrl; 
-        updates.defaultDisplayBackgroundStoragePath = newStoragePath; 
+        // Map null to undefined to satisfy ProjectDocumentData type without causing type errors
+        updates.defaultDisplayBackground = newBackgroundUrl === null ? undefined : newBackgroundUrl; 
+        updates.defaultDisplayBackgroundStoragePath = newStoragePath === null ? undefined : newStoragePath; 
       }
   
       if (Object.keys(updates).length > 0) {

@@ -12,10 +12,10 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       {
-        protocol: 'https', // Assuming your MinIO is served over HTTPS
-        hostname: 'minio.giancarlojunior.com',
-        port: '', // Or specify port if it's non-standard for HTTPS (e.g., if not 443)
-        pathname: '/**', // Allow any path from this host
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+        port: '',
+        pathname: '/**',
       },
     ],
   },

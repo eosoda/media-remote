@@ -3,12 +3,12 @@ export interface MediaFile {
   id: string;
   name: string;
   type: "image" | "video";
-  url: string; // URL from MinIO
+  url: string; // URL from Cloudinary
   size: number;
   uploadedAt: Date;
-  storagePath: string; // MinIO object key
-  thumbnailUrl?: string; // URL for video thumbnail from MinIO
-  thumbnailStoragePath?: string; // MinIO object key for video thumbnail
+  storagePath: string; // Cloudinary public_id
+  thumbnailUrl?: string; // URL for video thumbnail from Cloudinary
+  thumbnailStoragePath?: string; // Cloudinary public_id for video thumbnail
   order: number; // For drag-and-drop ordering
 }
 
@@ -21,6 +21,7 @@ export interface Project {
   createdAt: Date;
   instancePin: string; // Associate project with an instance PIN
   defaultDisplayBackground?: string; // New field: CSS color or image URL
+  defaultDisplayBackgroundStoragePath?: string; // Cloudinary public_id
 }
 
 export interface InstanceDisplayState {
@@ -37,6 +38,7 @@ export interface ProjectDocumentData {
   createdAt: number; // Store as timestamp
   instancePin: string;
   defaultDisplayBackground?: string; // New field: CSS color or image URL
+  defaultDisplayBackgroundStoragePath?: string; // Cloudinary public_id
 }
 
 // Firestore document representation for MediaFile (within Project's media subcollection)

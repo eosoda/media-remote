@@ -1,7 +1,7 @@
 
 # Media Remote
 
-Media Remote is a Next.js web application designed for managing and displaying digital media assets (images and videos) with remote control capabilities. It utilizes Firebase Firestore for real-time data synchronization and MinIO for S3-compatible object storage.
+Media Remote is a Next.js web application designed for managing and displaying digital media assets (images and videos) with remote control capabilities. It utilizes Firebase Firestore for real-time data synchronization and Cloudinary for media storage and dynamic delivery.
 
 ## Core Features
 
@@ -9,10 +9,12 @@ Media Remote is a Next.js web application designed for managing and displaying d
     -   Create and manage projects, each associated with a unique device instance PIN.
     -   Each project can have a name and a customizable default background for its display.
 -   **Media Upload and Management**:
-    -   Upload images (JPG, PNG, GIF, WebP) and videos (MP4, WebM) to MinIO storage.
+    -   Upload images (JPG, PNG, GIF, WebP) and videos (MP4, WebM) to Cloudinary.
     -   Automatic thumbnail generation for uploaded videos.
     -   View media in a gallery, set active media for display, and delete media.
     -   Reorder media items within a project using drag-and-drop.
+-   **Content Protection**:
+    -   Publicly displayed media is protected against unauthorized saving and right-clicking.
 -   **Fullscreen Media Display**:
     -   **Project-Specific Display**: Open a dedicated fullscreen display for a specific project.
     -   **Generic Device Display**: A display page that shows media based on the PIN entered in the remote control. It listens for changes from any remote controlling its PIN.
@@ -26,7 +28,7 @@ Media Remote is a Next.js web application designed for managing and displaying d
 -   **Admin Panel**:
     -   Protected by an optional password (configurable via `NEXT_PUBLIC_ADMIN_PASSWORD`).
     -   Manage all projects in the system (view, edit name, manage media, delete).
-    -   Manage active display instances: view PINs, last seen, current media, and delete instance states (which also deletes associated projects and their media from MinIO and Firebase).
+    -   Manage active display instances: view PINs, last seen, current media, and delete instance states (which also completely deletes associated projects and their media folders from Cloudinary and Firebase).
 -   **About Page**: Provides information about the application, its usage, and key features.
 
 ## Style Guidelines
@@ -49,7 +51,7 @@ Media Remote is a Next.js web application designed for managing and displaying d
 -   **Backend & Data Management**:
     -   Firebase Firestore (for project data, media metadata, and real-time display state synchronization)
 -   **Media Storage**:
-    -   MinIO (S3-compatible object storage for image and video files, including video thumbnails)
+    -   Cloudinary (Robust cloud-based media storage and CDN delivery)
 -   **AI (Optional/Placeholder)**:
     -   Genkit (Configured in `src/ai/`, though no active AI features are implemented beyond setup)
 
@@ -68,7 +70,7 @@ The project follows a standard Next.js application structure:
         -   **`page.tsx`**: Dashboard/Home page.
         -   **`about/`**: About page.
         -   **`admin/`**: Admin panel page.
-        -   **`api/minio/upload-url/`**: API route to generate presigned URLs for MinIO uploads.
+        -   **`api/cloudinary/`**: API routes to generate upload signatures, and securely delete individual assets or entire project folders via Cloudinary.
         -   **`display/`**:
             -   `page.tsx`: Generic device display page (uses PIN).
             -   `[projectId]/page.tsx`: Project-specific display page.
@@ -83,14 +85,14 @@ The project follows a standard Next.js application structure:
         -   `CreateProjectForm.tsx`, `MediaGallery.tsx`, `MediaItemCard.tsx`, `MediaUploader.tsx`, `ProjectItemCard.tsx`, `ProjectList.tsx`, `ProjectSettingsModal.tsx`, `PinEntryForm.tsx`, `MediaDisplayComponent.tsx`.
         -   Layout components: `Header.tsx`, `Sidebar.tsx`, `SidebarProvider.tsx`, `SiteLogo.tsx`.
     -   **`contexts/`**: React Context providers.
-        -   `ProjectContext.tsx`: Manages global state for projects, media, instance PINs, and Firebase/MinIO interactions.
+        -   `ProjectContext.tsx`: Manages global state for projects, media, instance PINs, and Firebase/Cloudinary interactions.
     -   **`hooks/`**: Custom React hooks.
         -   `useAutoHide.ts`: Hook for auto-hiding UI elements.
         -   `useMobile.ts`: Hook to detect mobile viewports.
         -   `useToast.ts`: Hook for displaying toast notifications.
     -   **`lib/`**: Utility functions and library initializations.
         -   `firebase.ts`: Firebase app initialization and Firestore export.
-        -   `minio.ts`: MinIO S3 client initialization.
+        -   `cloudinary.ts`: Cloudinary default initialized backend instance.
         -   `utils.ts`: General utility functions (e.g., `cn` for Tailwind class merging).
     -   **`types/`**: TypeScript type definitions (`index.ts`).
 
@@ -104,23 +106,20 @@ NEXT_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_firebase_auth_domain
 NEXT_PUBLIC_FIREBASE_DATABASE_URL=your_firebase_database_url (optional if only using Firestore)
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_firebase_project_id
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_firebase_storage_bucket (optional if only using MinIO for media)
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_firebase_storage_bucket
 NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_firebase_messaging_sender_id
 NEXT_PUBLIC_FIREBASE_APP_ID=your_firebase_app_id
 
-# MinIO Configuration
-NEXT_PUBLIC_MINIO_ENDPOINT=your_minio_endpoint (e.g., http://localhost:9000 or https://minio.example.com)
-NEXT_PUBLIC_MINIO_ACCESS_KEY_ID=your_minio_access_key
-NEXT_PUBLIC_MINIO_SECRET_ACCESS_KEY=your_minio_secret_key
-NEXT_PUBLIC_MINIO_BUCKET_NAME=your_minio_bucket_name
-NEXT_PUBLIC_MINIO_USE_SSL=false (or true if your MinIO endpoint uses HTTPS)
-NEXT_PUBLIC_MINIO_REGION=us-east-1 (or your preferred region, 'us-east-1' is a common default for MinIO)
+# Cloudinary Configuration
+NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=your_cloud_name
+NEXT_PUBLIC_CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
 
 # Admin Panel (Optional)
 NEXT_PUBLIC_ADMIN_PASSWORD=your_admin_password (if not set, admin panel is accessible without password, default "1234" if this var is present but empty)
 ```
 
-Ensure your MinIO bucket is created and has appropriate policies if needed (e.g., public read for objects if not using presigned GET URLs everywhere, though this app uses presigned PUTs and direct URLs).
+Ensure you have a Cloudinary account established with valid API keys.
 
 ## Getting Started
 
@@ -140,7 +139,7 @@ Ensure your MinIO bucket is created and has appropriate policies if needed (e.g.
     ```
 
 3.  **Set up Environment Variables:**
-    Create a `.env.local` file in the root directory and populate it with your Firebase and MinIO credentials as shown above.
+    Create a `.env.local` file in the root directory and populate it with your Firebase and Cloudinary credentials as shown above.
 
 4.  **Run the development server:**
     ```bash
