@@ -32,6 +32,7 @@ import {
   orderBy,
   writeBatch,
   setDoc,
+  deleteField,
 } from "firebase/firestore";
 
 
@@ -466,12 +467,16 @@ const deleteMedia = useCallback(async (
 
     const batch = writeBatch(firestore);
     
-    // Cloudinary Folder Deletion
     const folderPath = `media/${projectToProcess.instancePin}/${projectId}`;
-    try {
-        await fetch('/api/cloudinary/delete-folder', { method: 'POST', body: JSON.stringify({ folderPath }) });
-    } catch (folderDeleteError) {
-        console.error(`Error deleting folder ${folderPath} from Cloudinary:`, folderDeleteError);
+    const hasMediaInFolder = projectToProcess.media && projectToProcess.media.length > 0;
+    const hasBackgroundInFolder = projectToProcess.defaultDisplayBackgroundStoragePath?.startsWith(folderPath);
+
+    if (hasMediaInFolder || hasBackgroundInFolder) {
+        try {
+            await fetch('/api/cloudinary/delete-folder', { method: 'POST', body: JSON.stringify({ folderPath }) });
+        } catch (folderDeleteError) {
+            console.error(`Error deleting folder ${folderPath} from Cloudinary:`, folderDeleteError);
+        }
     }
     
     for (const mediaFile of projectToProcess.media) {
@@ -633,7 +638,7 @@ const deleteMedia = useCallback(async (
     ): Promise<void> => {
       const projectDocRef = doc(firestore, PROJECTS_COLLECTION, projectId);
       const currentProject = getProject(projectId); 
-      const updates: Partial<ProjectDocumentData & { defaultDisplayBackgroundStoragePath?: string | null }> = {};
+      const updates: any = {}; // Use any to allow deleteField()
   
       if (settings.name && settings.name !== currentProject?.name) {
         updates.name = settings.name;
@@ -644,7 +649,7 @@ const deleteMedia = useCallback(async (
       const newStoragePath = settings.defaultDisplayBackgroundStoragePath;
       const oldStoragePath = currentProject?.defaultDisplayBackgroundStoragePath;
   
-      if (newStoragePath !== undefined) { 
+      if (newStoragePath !== undefined || newBackgroundUrl !== undefined) { 
         if (oldStoragePath && oldStoragePath !== newStoragePath) {
             try {
               await fetch('/api/cloudinary/delete', { method: 'POST', body: JSON.stringify({ publicId: oldStoragePath }) });
@@ -652,16 +657,36 @@ const deleteMedia = useCallback(async (
               console.error("Error deleting old project background from Cloudinary:", error);
             }
         }
-        // Map null to undefined to satisfy ProjectDocumentData type without causing type errors
-        updates.defaultDisplayBackground = newBackgroundUrl === null ? undefined : newBackgroundUrl; 
-        updates.defaultDisplayBackgroundStoragePath = newStoragePath === null ? undefined : newStoragePath; 
+        
+        if (newBackgroundUrl === null) {
+            updates.defaultDisplayBackground = deleteField();
+        } else if (newBackgroundUrl !== undefined) {
+            updates.defaultDisplayBackground = newBackgroundUrl;
+        }
+
+        if (newStoragePath === null) {
+            updates.defaultDisplayBackgroundStoragePath = deleteField();
+        } else if (newStoragePath !== undefined) {
+            updates.defaultDisplayBackgroundStoragePath = newStoragePath;
+        }
       }
   
       if (Object.keys(updates).length > 0) {
         await updateDoc(projectDocRef, updates);
         setProjects(prevProjects => prevProjects.map(p => {
           if (p.id === projectId) {
-            return { ...p, ...updates, createdAt: new Date(p.createdAt) }; 
+            // Apply updates locally, handling deleteField()
+            const updatedProject = { ...p, createdAt: new Date(p.createdAt) };
+            if (newBackgroundUrl === null) delete updatedProject.defaultDisplayBackground;
+            else if (newBackgroundUrl !== undefined) updatedProject.defaultDisplayBackground = newBackgroundUrl;
+
+            if (newStoragePath === null) delete updatedProject.defaultDisplayBackgroundStoragePath;
+            else if (newStoragePath !== undefined) updatedProject.defaultDisplayBackgroundStoragePath = newStoragePath;
+            
+            if (updates.name) updatedProject.name = updates.name;
+            if (updates.slug) updatedProject.slug = updates.slug;
+
+            return updatedProject;
           }
           return p;
         }));
@@ -709,6 +734,16 @@ const deleteMedia = useCallback(async (
       } catch (error) {
         console.error(`Failed to delete project ${project.id} (PIN: ${pin}) during instance state deletion:`, error);
       }
+    }
+    
+    // Delete the instance root folder in Cloudinary
+    const instanceHasCloudinaryData = projectsToDelete.some(p => (p.media && p.media.length > 0) || p.defaultDisplayBackgroundStoragePath);
+    if (instanceHasCloudinaryData) {
+        try {
+            await fetch('/api/cloudinary/delete-folder', { method: 'POST', body: JSON.stringify({ folderPath: `media/${pin}` }) });
+        } catch (folderDeleteError) {
+            console.error(`Error deleting instance folder media/${pin} from Cloudinary:`, folderDeleteError);
+        }
     }
     
     const instanceDocRef = doc(firestore, INSTANCE_DISPLAY_STATE_COLLECTION, pin);
